@@ -1,0 +1,622 @@
+# SOFTWARE REQUIREMENTS SPECIFICATION
+
+## UniPDF Studio: The Complete Online PDF Workspace
+
+---
+
+**Version:** 1.0  
+**Date:** November 2, 2025  
+**Submitted By:** [Your Name]  
+**Roll No:** [Your Roll Number]  
+**Course:** [Course Name/Code]  
+**Department:** [Department Name]  
+**Institution:** [College Name]  
+**Academic Year:** 2024-2025
+
+---
+
+## TABLE OF CONTENTS
+
+| Sr. No. | Content | Page No. |
+|---------|---------|----------|
+| 1. | **Introduction** | 3-6 |
+| | 1.1 Purpose | |
+| | 1.2 Scope | |
+| | 1.3 Project Objective | |
+| | 1.4 Definitions, Acronyms, and Abbreviations | |
+| | 1.5 Overview | |
+| 2. | **Overall Description** | 7-10 |
+| | 2.1 Product Perspective | |
+| | 2.2 Product Features | |
+| | 2.3 User Classes and Characteristics | |
+| | 2.4 Operating Environment | |
+| | 2.5 Assumptions and Dependencies | |
+| 3. | **Functional Requirements** | 11-12 |
+| | 3.1 Module 1: Universal File Support and PDF Editing | |
+| | 3.2 Module 2: AI-Powered Document Intelligence | |
+| | 3.3 Module 3: OCR and File Management | |
+| | 3.4 Module 4: Collaboration and Cloud Features | |
+| 4. | **Non-Functional Requirements** | 13 |
+| | 4.1 Performance | |
+| | 4.2 Security | |
+| | 4.3 Usability | |
+| | 4.4 Reliability and Availability | |
+| | 4.5 Scalability | |
+| 5. | **System Models** | 14 |
+| | 5.1 Use Case Diagrams | |
+| | 5.2 Data Flow Diagrams (DFD) | |
+| | 5.3 Entity Relationship Diagram | |
+
+---
+
+## 1. INTRODUCTION
+
+### 1.1 Purpose
+
+This Software Requirements Specification (SRS) document provides a comprehensive description of UniPDF Studio, an advanced web-based PDF management and editing platform. It serves as the foundational blueprint for the development lifecycle and addresses multiple stakeholder needs.
+
+**Intended Audience:**
+
+- **Development Team:** Technical requirements, architectural guidelines, and implementation specifications
+- **Project Evaluators:** Technical merit assessment, feasibility evaluation, and academic review
+- **Future Maintainers:** Design philosophy, implementation details, and system documentation
+- **End Users:** System capabilities, limitations, and quality standards
+
+This document establishes clear communication by defining technical requirements, functional specifications, and performance expectations for all project stakeholders.
+
+### 1.2 Scope
+
+UniPDF Studio is a comprehensive browser-based application that transforms how users interact with PDF documents. The system eliminates the need for desktop software installation, providing professional-grade PDF manipulation tools through modern web browsers.
+
+**Core Capabilities:**
+
+The system provides robust PDF viewing, editing, and annotation functionalities comparable to commercial desktop applications. Users can work with multiple file formats:
+
+- **PDF Files:** Native support with full editing capabilities
+- **Microsoft Word:** DOCX format processing and conversion
+- **Images:** JPEG, PNG, TIFF support for conversion and insertion
+- **Text Formats:** Plain text and HTML document handling
+
+**Innovative Features:**
+
+**Artificial Intelligence Integration:** The system leverages OpenAI's GPT-4 for intelligent document analysis. Users can generate summaries of lengthy documents, ask natural language questions about content, and receive contextually relevant answers. Smart text rewriting capabilities automatically rephrase content to match different tone requirements, complexity levels, or length constraints.
+
+**Optical Character Recognition:** Automatic detection of scanned documents with conversion to searchable and editable content. Supports 50+ languages with sophisticated image pre-processing including deskewing, denoising, and contrast enhancement for improved accuracy.
+
+**File Management Operations:**
+
+- Merge multiple PDFs into single documents
+- Split large files by page range, bookmarks, or intervals
+- Rearrange pages through drag-and-drop interfaces
+- Compress files with adjustable quality settings
+- Password protection using AES-256 encryption
+
+**Cloud Collaboration Features:**
+
+Documents are stored securely in cloud infrastructure with access from any device. Real-time collaboration allows multiple users to simultaneously edit documents with instant synchronization. Version control tracks document evolution and enables restoration of previous versions.
+
+**Out of Scope (Phase 1):**
+
+- Native mobile applications (iOS/Android)
+- Offline desktop version
+- Enterprise SSO integration
+- Advanced vector graphic design capabilities
+
+### 1.3 Project Objective
+
+UniPDF Studio is driven by five fundamental objectives addressing critical gaps in document processing:
+
+**1. Accessibility**
+
+Provide professional PDF editing accessible from any device with a web browser. This democratizes access to tools traditionally locked behind expensive licenses, ensuring students, professionals, and remote workers can accomplish document tasks efficiently from any location.
+
+**2. Cost-Effectiveness**
+
+Offer a free alternative to expensive desktop software like Adobe Acrobat (which costs $180+/year). The platform leverages modern cloud computing and open-source technologies to deliver professional features at minimal cost.
+
+**3. Innovation**
+
+Integrate AI and OCR technologies for intelligent document processing. Unlike conventional software focused on manual editing, UniPDF Studio incorporates intelligent automation that understands content, extracts insights, and enhances productivity through features like AI summarization and conversational document queries.
+
+**4. Collaboration**
+
+Enable real-time team collaboration on PDF documents. Multiple users can simultaneously edit documents, discuss changes through integrated commenting, and track evolution through comprehensive version control, transforming document editing into a team-enabled process.
+
+**5. Simplicity**
+
+Minimize learning curves through intuitive interface design. Users should accomplish basic tasks within minutes without extensive training, while advanced capabilities remain accessible to expert users.
+
+**Success Metrics:**
+
+- Upload and edit PDF within 60 seconds of first visit
+- System uptime: 99.9% reliability
+- Support documents up to 100MB and 1,000 pages
+- OCR accuracy: 90%+ for clear scans
+- User satisfaction: 4.5/5 stars or higher
+
+### 1.4 Definitions, Acronyms, and Abbreviations
+
+| Term | Definition |
+|------|------------|
+| **AI** | Artificial Intelligence - Machine learning models for text processing, trained on vast datasets to perform natural language understanding and generation |
+| **API** | Application Programming Interface - Standardized protocols enabling system components and external services to exchange data and functionality |
+| **DOCX** | Microsoft Word document format (Office Open XML) for text processing |
+| **JWT** | JSON Web Token - Industry-standard authentication mechanism for secure identity transmission between client and server |
+| **OCR** | Optical Character Recognition - Technology converting image-based text into searchable and editable content |
+| **PDF** | Portable Document Format - Adobe's standardized format preserving document formatting across all platforms |
+| **REST** | Representational State Transfer - Architectural style for web service interfaces using standard HTTP methods |
+| **SRS** | Software Requirements Specification - Formal documentation of system requirements and technical specifications |
+| **UI/UX** | User Interface / User Experience - Visual elements and overall interaction quality |
+| **WebSocket** | Protocol enabling real-time bidirectional communication between browsers and servers for instant updates |
+
+### 1.5 Overview
+
+This document is organized in logical progression from high-level concepts to detailed specifications:
+
+**Section 2 - Overall Description:** Product perspective, major features, user classes, operating environment, and dependencies
+
+**Section 3 - Functional Requirements:** Detailed capabilities organized by modules with input/output specifications and acceptance criteria
+
+**Section 4 - Non-Functional Requirements:** Performance, security, usability, reliability, and scalability standards
+
+**Section 5 - System Models:** Use case diagrams, data flow diagrams, and entity relationship models providing visual system representations
+
+---
+
+## 2. OVERALL DESCRIPTION
+
+### 2.1 Product Perspective
+
+UniPDF Studio operates as a standalone web application serving as a comprehensive alternative to desktop PDF software. The system delivers full functionality through modern web browsers, eliminating installation requirements while maintaining professional-grade capabilities.
+
+**System Architecture:**
+
+```
+┌─────────────────────────────────────────┐
+│         Web Browser (Client)            │
+│    ┌─────────────────────────────┐     │
+│    │   React Frontend (UI)       │     │
+│    └─────────────┬───────────────┘     │
+└──────────────────┼─────────────────────┘
+                   │ HTTPS/WebSocket
+                   ▼
+┌─────────────────────────────────────────┐
+│      Backend Server (Node.js)           │
+│  ┌──────────┐  ┌──────────────────┐    │
+│  │ Express  │  │  PDF Processing  │    │
+│  │   API    │  │   (pdf-lib)      │    │
+│  └────┬─────┘  └──────────────────┘    │
+└───────┼──────────────────────────────┬──┘
+        │                              │
+        ▼                              ▼
+┌──────────────┐            ┌──────────────┐
+│   MongoDB    │            │   Firebase   │
+│  (Database)  │            │   Storage    │
+└──────────────┘            └──────────────┘
+        │                              │
+        └──────────────┬───────────────┘
+                       │
+        ┌──────────────┴──────────────┐
+        │    External Services        │
+        ├─ OpenAI (AI Features)       │
+        ├─ Tesseract (OCR)            │
+        └─ Google Drive (Integration) │
+        └─────────────────────────────┘
+```
+
+**Key Architectural Components:**
+
+**Client-Side (React Frontend):**
+- Single-page application built with React 18+ for interactive UI
+- Component-based architecture with reusable elements
+- Virtual DOM for efficient rendering and updates
+- Runs entirely in web browser without plugins
+- Communicates via HTTPS for security and WebSocket for real-time features
+
+**Server-Side (Node.js Backend):**
+- Express framework handling RESTful API requests
+- Event-driven, non-blocking I/O for high concurrency
+- pdf-lib for PDF manipulation and processing
+- Asynchronous job queues (Bull + Redis) for resource-intensive tasks like OCR
+- JWT-based stateless authentication
+
+**Data Layer:**
+- **MongoDB:** Document-oriented database storing user profiles, document metadata, sharing permissions, comments, and version history
+- **Firebase Storage:** Scalable cloud storage for actual PDF files and binary content
+- **Redis:** Caching layer for session management and rate limiting
+
+**External Integrations:**
+- **OpenAI API:** GPT-4 for AI summarization and conversational queries
+- **Tesseract.js:** Client-side OCR processing
+- **Google Vision API:** High-accuracy OCR for premium users
+- **Firebase Auth:** User identity management and OAuth
+
+### 2.2 Product Features
+
+UniPDF Studio is organized into four modules. Together they cover everyday PDF work, intelligent assistance, and collaboration without overwhelming new users.
+
+• Module 1 — Universal File Support and Editing: Upload common formats (PDF, DOCX, images, text, HTML) and edit directly in the browser. Core tools include text formatting, annotations, shapes, image placement, form fields, and links; actions are undoable and feel responsive on typical devices.
+
+Supporting points:
+- Common tasks: highlight passages, correct typos, insert images, add a signature field
+- Exports preserve layout; fillable forms remain interactive
+
+• Module 2 — AI-Powered Intelligence: Summarize long documents, ask questions in plain language, and quickly rewrite text to be simpler, more formal, shorter, or more detailed. When possible, answers reference specific pages and correct basic OCR mistakes.
+
+Supporting points:
+- Summary lengths (short/medium/long); typical responses in 3–10 seconds
+- Page citations appear when context allows; usage limits visible to users
+
+• Module 3 — OCR and File Management: Detect scanned pages, recognize text in 50+ languages, and produce searchable PDFs or text exports. Routine operations like merge, split, rearrange, compress, watermark, and protect are available from one place.
+
+Supporting points:
+- OCR targets ~90%+ accuracy on clear 300 DPI scans; exports to searchable PDF or TXT/DOCX/MD
+- Visual previews for merge/split/reorder before applying changes
+
+• Module 4 — Collaboration and Cloud: Sign in with email or Google, store files in the cloud, share with view/comment/edit permissions, and collaborate in real time with presence, comments, and version history. Export to standard formats when you’re done.
+
+Supporting points:
+- Share by link or specific emails with view/comment/edit roles
+- Live edits appear for collaborators in under a second for small teams; quick version restore
+### 2.3 User Classes and Characteristics
+
+Students use the app occasionally to edit assignments, run OCR on scanned notes, and combine handouts; they need simple tools that work quickly without setup.
+
+Business professionals rely on it more regularly for contract review and secure sharing; consistent formatting, collaboration, and protection options matter most to them.
+
+Educators use it throughout the week to annotate, grade, create simple forms, and organize materials for students; clarity and reliable export are key.
+
+### 2.4 Operating Environment
+
+The application runs in modern browsers (Chrome, Firefox, Safari, Edge) on laptops or desktops with at least HD resolution and a stable connection. The backend uses Node.js with Express, MongoDB for data, Firebase/AWS for storage and auth, and integrates PDF.js, Fabric.js, pdf-lib, Tesseract.js, and OpenAI for document rendering, editing, OCR, and AI features. Containerized deployment on common cloud providers is supported.
+
+### 2.5 Assumptions and Dependencies
+
+We assume a stable connection, a modern browser, and typical files under ~20MB. Core dependencies include Firebase (auth/storage), MongoDB Atlas, OpenAI for AI features, and Tesseract/Google Vision for OCR. To manage risk, we pin versions, keep regular backups, cache expensive AI calls, provide fallbacks for auth and OCR, and design for graceful degradation during third‑party outages.
+
+---
+
+## 3. Functional Requirements
+
+### 3.1 Module 1: Universal File Support and PDF Editing
+
+The system accepts common document and image formats, supports drag‑and‑drop upload with validation, and renders pages smoothly for navigation and zoom. Users can edit text, annotate, draw shapes, insert images, and build simple forms; changes apply instantly and can be undone. Export preserves layout and, when forms are used, keeps fields interactive.
+
+Acceptance summary: handles large documents reasonably (up to ~100MB), shows responsive editing, and provides clear upload and export feedback.
+
+Key checks:
+- Upload validation and progress indicators are accurate and easy to follow
+- Edited PDFs export with preserved layout and any created form fields
+
+### 3.2 Module 2: AI-Powered Document Intelligence
+
+Users can summarize long files, ask questions grounded in the document, and rewrite selected passages to fit a desired tone or length. The assistant cites pages when possible and respects practical usage limits to control cost and load.
+
+Acceptance summary: typical responses return in a few seconds; summaries capture main ideas; quotas and rate limits are visible to the user.
+
+Key checks:
+- Answers reference relevant pages when possible and stay grounded in the document
+- Quota messages appear before limits are reached and explain reset timing
+
+### 3.3 Module 3: OCR and File Management
+
+Scanned pages are detected automatically, processed with OCR in multiple languages, and exported as searchable PDFs or plain text. Common file operations—merge, split, reorder, rotate, compress, watermark, and protect—are offered in a single flow with previews before committing.
+
+Acceptance summary: OCR is accurate on clear scans, operations complete promptly on medium‑sized files, and original quality is preserved where expected.
+
+Key checks:
+- OCR confidence is surfaced; preview shows recognized text before saving
+- Merge/split/reorder offer undo and do not degrade image/text quality unnecessarily
+
+### 3.4 Module 4: Collaboration and Cloud Features
+
+Users sign in with email or Google, store documents in the cloud, and share by link or email with view/comment/edit permissions. Real‑time collaboration shows presence and live updates, and a simple version history allows review and restore of earlier states.
+
+Acceptance summary: login and sharing are quick, edits propagate in near real time for small teams, and version previews and rollbacks are reliable.
+
+Key checks:
+- Sharing clearly reflects permission levels (view/comment/edit) in the UI
+- Version restore provides a preview and completes without data loss
+---
+
+## 4. Non-Functional Requirements
+
+### 4.1 Performance
+
+The app should feel fast on typical broadband: pages load within a few seconds, tools respond instantly, and medium documents open and render smoothly. Server throughput is sized for steady student/professional usage with background workers for heavy tasks like OCR, keeping the UI responsive.
+
+Support:
+- Target page load ≈ 3s on a 20 Mbps connection; tool activation ≈ 100 ms
+- Background workers offload OCR/exports to keep interactions snappy
+
+### 4.2 Security
+
+Passwords are hashed, sessions are token‑based, and all traffic is encrypted. Files at rest use strong encryption, input is validated and sanitized, and access is enforced server‑side so users only see what they’re allowed to share or edit.
+
+Support:
+- TLS 1.3 in transit; AES‑256 at rest; bcrypt for password hashing
+- Strict input validation and permission checks on every API call
+
+### 4.3 Usability
+
+New users can complete basic tasks in minutes with a short guided tour and helpful tooltips. Frequent actions have shortcuts, recent files are easy to find, and autosave prevents work loss. The UI follows accessibility best practices (WCAG 2.1 AA) and supports dark mode.
+
+Support:
+- 5‑step onboarding highlights core actions; autosave runs every ~30 seconds
+- Keyboard shortcuts for navigation/editing; contrast and ARIA labels validated
+
+### 4.4 Reliability and Availability
+
+We target 99.9% uptime with redundancy for app servers and databases, automatic failover, and graceful degradation if a dependency is down. Backups run regularly and are stored in multiple regions; errors are logged with context and retried when safe.
+
+Support:
+- Redundant app nodes and DB replicas with automated failover
+- Daily full backups with incremental snapshots and regional redundancy
+
+### 4.5 Scalability
+
+The service scales horizontally with load balancers and read replicas. Storage uses cloud backends and a CDN for global delivery. As usage grows, pooling and sharding strategies can be adopted without redesigning the app.
+
+Support:
+- Auto‑scaling adds capacity based on CPU/memory thresholds
+- CDN serves static assets and large files closer to users
+
+---
+
+## 5. System Models
+
+### 5.1 Use Case Diagrams
+
+#### **Use Case 1: Student Workflow**
+```
+┌───────────┐
+│  Student  │
+└─────┬─────┘
+      │
+      ├──> Upload scanned lecture notes
+      │         │
+      │         ├──> Run OCR to extract text
+      │         │
+      │         └──> Export as searchable PDF
+      │
+      ├──> Open assignment PDF
+      │         │
+      │         ├──> Edit and add text
+      │         │
+      │         └──> Highlight important sections
+      │
+      └──> Merge multiple PDFs into one document
+                │
+                └──> Download final PDF
+```
+
+#### **Use Case 2: Business Professional Workflow**
+```
+┌──────────────────┐
+│   Professional   │
+└────────┬─────────┘
+         │
+         ├──> Upload contract PDF
+         │         │
+         │         ├──> Review and annotate
+         │         │
+         │         └──> Add comments for team
+         │
+         ├──> Share with colleagues
+         │         │
+         │         ├──> Set permission (comment only)
+         │         │
+         │         └──> Set expiration date
+         │
+         └──> Password protect document
+                   │
+                   └──> Download encrypted PDF
+```
+
+#### **Use Case 3: AI-Powered Analysis**
+```
+┌───────────┐
+│    User   │
+└─────┬─────┘
+      │
+      ├──> Upload 100-page research paper
+      │         │
+      │         └──> Click "Summarize" button
+      │                   │
+      │                   └──> AI generates 300-word summary
+      │
+      ├──> Ask question: "What are the key findings?"
+      │         │
+      │         └──> AI responds with answer + page references
+      │
+      └──> Select complex paragraph
+                │
+                └──> Use "Simplify" to rewrite
+                          │
+                          └──> Review and accept rewritten text
+```
+
+### 5.2 Data Flow Diagrams (DFD)
+
+#### **Level 0 DFD: Context Diagram**
+```
+┌─────────────┐
+│    User     │
+└──────┬──────┘
+       │
+       │ Upload File
+       │ Edit Commands
+       │ Share Request
+       ▼
+┌──────────────────────┐
+│                      │
+│   UniPDF Studio      │
+│      System          │
+│                      │
+└──────┬───────┬───────┘
+       │       │
+       │       │ AI Request
+       │       └─────────────────┐
+       │                         ▼
+       │                  ┌──────────────┐
+       │                  │  OpenAI API  │
+       │                  └──────────────┘
+       │
+       │ Store/Retrieve Files
+       ▼
+┌─────────────┐
+│   Cloud     │
+│   Storage   │
+└─────────────┘
+```
+
+#### **Level 1 DFD: Main System Processes**
+```
+                    ┌─────────────┐
+                    │    User     │
+                    └──────┬──────┘
+                           │
+                 ┌─────────┼─────────┐
+                 │         │         │
+         Upload  │    Edit │    Share│
+                 ▼         ▼         ▼
+          ┌──────────┐  ┌─────────┐  ┌──────────┐
+          │ Process  │  │  Edit   │  │  Share   │
+          │ 1.0      │  │ Process │  │ Process  │
+          │ Upload   │  │  2.0    │  │   3.0    │
+          └────┬─────┘  └────┬────┘  └────┬─────┘
+               │             │             │
+               │             │             │
+               └─────────────┴─────────────┘
+                             │
+                             ▼
+                      ┌─────────────┐
+                      │  Database   │
+                      │  (MongoDB)  │
+                      └─────────────┘
+```
+
+#### **Level 2 DFD: File Upload Process (Process 1.0)**
+```
+┌──────────┐
+│   User   │
+└─────┬────┘
+      │ Select File
+      ▼
+┌─────────────────┐
+│  1.1 Validate   │
+│  File Type      │
+└────┬────────────┘
+     │ Valid File
+     ▼
+┌─────────────────┐
+│  1.2 Upload to  │
+│  Cloud Storage  │
+└────┬────────────┘
+     │ File URL
+     ▼
+┌─────────────────┐
+│  1.3 Extract    │
+│  Metadata       │
+└────┬────────────┘
+     │ Metadata
+     ▼
+┌─────────────────┐
+│  1.4 Create     │────────> [Database]
+│  DB Record      │
+└────┬────────────┘
+     │
+     ▼
+┌─────────────────┐
+│  1.5 Generate   │────────> [Storage]
+│  Thumbnails     │
+└────┬────────────┘
+     │ Success
+     ▼
+┌──────────┐
+│   User   │
+└──────────┘
+```
+
+#### **Level 2 DFD: AI Processing (Process 4.0)**
+```
+┌──────────┐
+│   User   │
+└─────┬────┘
+      │ Summarize Request
+      ▼
+┌─────────────────┐
+│  4.1 Extract    │<──────── [Database]
+│  PDF Text       │
+└────┬────────────┘
+     │ Text Content
+     ▼
+┌─────────────────┐
+│  4.2 Send to    │────────> [OpenAI API]
+│  AI Service     │<────────
+└────┬────────────┘
+     │ Summary
+     ▼
+┌─────────────────┐
+│  4.3 Store      │────────> [Database]
+│  Summary        │
+└────┬────────────┘
+     │ Display
+     ▼
+┌──────────┐
+│   User   │
+└──────────┘
+```
+
+### 5.3 Entity Relationship Diagram
+```
+┌──────────────┐         ┌──────────────┐         ┌──────────────┐
+│     USER     │────────<│   DOCUMENT   │>────────│   VERSION    │
+│              │  owns   │              │  has    │              │
+│ - _id        │         │ - _id        │         │ - _id        │
+│ - email      │         │ - title      │         │ - versionNum │
+│ - password   │         │ - owner (FK) │         │ - document   │
+│ - name       │         │ - fileUrl    │         │ - fileUrl    │
+│ - role       │         │ - fileSize   │         │ - createdAt  │
+│ - storage    │         │ - pages      │         └──────────────┘
+└──────┬───────┘         │ - ocrText    │
+       │                 └──────┬───────┘
+       │                        │
+       │                        │ has
+       │                        ▼
+       │                 ┌──────────────┐
+       │                 │   COMMENT    │
+       │                 │              │
+       │                 │ - _id        │
+       └─────────────────│ - document   │
+         authors         │ - author (FK)│
+                         │ - text       │
+                         │ - page       │
+                         └──────────────┘
+```
+
+---
+
+## Conclusion
+
+UniPDF Studio aims to democratize PDF editing by providing professional-grade tools accessible to anyone with a web browser. By combining traditional PDF manipulation with modern AI and OCR technologies, the system offers a comprehensive solution for students, professionals, and educators. The modular architecture ensures scalability and maintainability, while the cloud-first approach enables seamless collaboration and access from any device.
+
+**Key Success Factors:**
+1. Intuitive user interface requiring minimal training
+2. Fast performance with responsive editing tools
+3. Reliable cloud storage with 99.9% uptime
+4. Intelligent AI features that add real value
+5. Strong security and privacy protection
+
+**Timeline:**
+- Phase 1 (Months 1-3): Core PDF editing and file operations
+- Phase 2 (Months 4-5): AI features and OCR integration
+- Phase 3 (Month 6): Collaboration and cloud features
+- Testing and Deployment (Month 6)
+
+---
+
+**Prepared By:** [Your Name]  
+**Contact:** [Your Email]  
+**Date:** November 2, 2025  
+**Version:** 1.0 - Final Draft
