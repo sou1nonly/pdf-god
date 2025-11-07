@@ -27,14 +27,27 @@ export const uploadFileToStorage = async (
   options: UploadOptions = {}
 ): Promise<UploadResult> => {
   try {
-    const { bucket = DEFAULT_BUCKET, folder = "uploads", onProgress } = options;
+    const { bucket = DEFAULT_BUCKET, folder, onProgress } = options;
+
+    // Get current user ID for folder structure
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "User not authenticated",
+      };
+    }
 
     // Generate unique filename
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substring(2, 15);
     const extension = file.name.split(".").pop();
     const fileName = `${timestamp}-${randomString}.${extension}`;
-    const filePath = folder ? `${folder}/${fileName}` : fileName;
+    
+    // Use user ID as folder for organization
+    const filePath = `${userId}/${fileName}`;
 
     // Simulate progress (Supabase doesn't provide upload progress natively)
     let uploadProgress = 0;
@@ -198,7 +211,6 @@ export const saveFileMetadata = async (metadata: {
   size: number;
   type: string;
   storage_path: string;
-  storage_url: string;
   user_id?: string;
 }) => {
   try {
@@ -207,11 +219,10 @@ export const saveFileMetadata = async (metadata: {
     const { data, error } = await (supabase as any)
       .from("documents")
       .insert({
-        title: metadata.name,
+        file_name: metadata.name,
         file_size: metadata.size,
         file_type: metadata.type,
         storage_path: metadata.storage_path,
-        storage_url: metadata.storage_url,
         user_id: user?.id || metadata.user_id,
       })
       .select()

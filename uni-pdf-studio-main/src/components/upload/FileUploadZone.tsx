@@ -24,10 +24,12 @@ interface UploadFile {
 }
 
 interface FileUploadZoneProps {
-  onUploadComplete?: (files: File[]) => void;
+  onUploadComplete?: (files: File[], uploadedFiles?: UploadFile[]) => void;
   maxFiles?: number;
+  maxSizeBytes?: number;
   maxSizeMB?: number;
   acceptedFormats?: string[];
+  disabled?: boolean;
 }
 
 export const FileUploadZone = ({
@@ -75,6 +77,7 @@ export const FileUploadZone = ({
   const simulateUpload = async (uploadFile: UploadFile) => {
     try {
       let fileToUpload = uploadFile.file;
+      console.log('Starting upload for:', uploadFile.file.name, 'Needs conversion:', needsConversion(uploadFile.file));
 
       // Check if file needs conversion
       if (needsConversion(uploadFile.file)) {
@@ -104,10 +107,12 @@ export const FileUploadZone = ({
           throw new Error('File conversion failed');
         }
 
+        console.log('File converted successfully:', convertedFile.name);
         fileToUpload = convertedFile;
       }
 
       // Update status to uploading
+      console.log('Uploading file:', fileToUpload.name, 'Size:', fileToUpload.size, 'Type:', fileToUpload.type);
       setUploadFiles(prev =>
         prev.map(uf =>
           uf.id === uploadFile.id
@@ -151,13 +156,15 @@ export const FileUploadZone = ({
       }
 
       // Save metadata to database
+      console.log('Saving metadata for:', fileToUpload.name, 'Path:', result.path);
       const metadata = await saveFileMetadata({
         name: fileToUpload.name,
         size: fileToUpload.size,
         type: fileToUpload.type,
         storage_path: result.path || '',
-        storage_url: result.url || '',
       });
+
+      console.log('Metadata saved:', metadata);
 
       // Mark as success
       setUploadFiles(prev =>
@@ -228,10 +235,11 @@ export const FileUploadZone = ({
       if (newUploadFiles.length > 0) {
         setUploadFiles(prev => [...prev, ...newUploadFiles]);
         
-        // Start uploading
-        for (const uploadFile of newUploadFiles) {
+        // Start uploading all files
+        const uploadPromises = newUploadFiles.map(async (uploadFile) => {
           try {
             await simulateUpload(uploadFile);
+            return uploadFile;
           } catch (error) {
             setUploadFiles(prev =>
               prev.map(uf =>
@@ -244,12 +252,29 @@ export const FileUploadZone = ({
                   : uf
               )
             );
+            return null;
           }
-        }
+        });
 
-        // Notify parent component
-        const successFiles = newUploadFiles.map(uf => uf.file);
-        onUploadComplete?.(successFiles);
+        // Wait for all uploads to complete
+        await Promise.all(uploadPromises);
+
+        // Get the updated upload files with documentIds
+        setUploadFiles(current => {
+          const successFiles = current.filter(uf => 
+            newUploadFiles.some(nuf => nuf.id === uf.id) && uf.status === 'success'
+          );
+          
+          // Notify parent component with completed uploads
+          if (successFiles.length > 0) {
+            onUploadComplete?.(
+              successFiles.map(uf => uf.file),
+              successFiles
+            );
+          }
+          
+          return current;
+        });
       }
     },
     [uploadFiles, maxFiles, maxSizeBytes, onUploadComplete]

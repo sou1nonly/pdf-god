@@ -1,32 +1,71 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, Search, Grid, List, Plus } from "lucide-react";
+import { FileText, Search, Grid, List, Plus, ExternalLink, RefreshCw, Trash2, Edit2, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Document {
   id: string;
-  title: string;
+  file_name: string;
   file_size: number;
   file_type: string;
-  storage_url: string;
+  storage_path: string;
   created_at: string;
   updated_at: string;
 }
 
 export const DocumentsList = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  
+  // Rename dialog state
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [documentToRename, setDocumentToRename] = useState<Document | null>(null);
+  const [newFileName, setNewFileName] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
-    fetchDocuments();
-  }, []);
+    if (user) {
+      fetchDocuments();
+    }
+  }, [user]);
 
   const fetchDocuments = async () => {
     try {
@@ -44,9 +83,13 @@ export const DocumentsList = () => {
       }
 
       setDocuments(data || []);
+      
+      if (data && data.length > 0) {
+        console.log(`Loaded ${data.length} documents`);
+      }
     } catch (error) {
       console.error("Exception:", error);
-      toast.error("An error occurred");
+      toast.error("An error occurred while loading documents");
     } finally {
       setLoading(false);
     }
@@ -69,8 +112,112 @@ export const DocumentsList = () => {
     });
   };
 
+  const handleDeleteClick = (doc: Document) => {
+    setDocumentToDelete(doc);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!documentToDelete) return;
+
+    try {
+      setDeleting(true);
+
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('documents')
+        .remove([documentToDelete.storage_path]);
+
+      if (storageError) {
+        console.error('Storage delete error:', storageError);
+        toast.error('Failed to delete file from storage');
+        return;
+      }
+
+      // Delete from database
+      const { error: dbError } = await (supabase as any)
+        .from('documents')
+        .delete()
+        .eq('id', documentToDelete.id);
+
+      if (dbError) {
+        console.error('Database delete error:', dbError);
+        toast.error('Failed to delete document record');
+        return;
+      }
+
+      // Update local state
+      setDocuments(prev => prev.filter(d => d.id !== documentToDelete.id));
+      toast.success('Document deleted successfully');
+      setDeleteDialogOpen(false);
+      setDocumentToDelete(null);
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('An error occurred while deleting');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleRenameClick = (doc: Document) => {
+    setDocumentToRename(doc);
+    // Remove extension for editing, we'll add it back
+    const nameWithoutExt = doc.file_name.replace(/\.[^/.]+$/, '');
+    setNewFileName(nameWithoutExt);
+    setRenameDialogOpen(true);
+  };
+
+  const handleRenameConfirm = async () => {
+    if (!documentToRename || !newFileName.trim()) return;
+
+    try {
+      setRenaming(true);
+
+      // Get the file extension from original filename
+      const extension = documentToRename.file_name.split('.').pop();
+      const fullNewName = `${newFileName.trim()}.${extension}`;
+
+      // Check if name actually changed
+      if (fullNewName === documentToRename.file_name) {
+        setRenameDialogOpen(false);
+        return;
+      }
+
+      // Update database
+      const { error } = await (supabase as any)
+        .from('documents')
+        .update({ file_name: fullNewName })
+        .eq('id', documentToRename.id);
+
+      if (error) {
+        console.error('Rename error:', error);
+        toast.error('Failed to rename document');
+        return;
+      }
+
+      // Update local state
+      setDocuments(prev =>
+        prev.map(d =>
+          d.id === documentToRename.id
+            ? { ...d, file_name: fullNewName }
+            : d
+        )
+      );
+
+      toast.success('Document renamed successfully');
+      setRenameDialogOpen(false);
+      setDocumentToRename(null);
+      setNewFileName('');
+    } catch (error) {
+      console.error('Rename error:', error);
+      toast.error('An error occurred while renaming');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const filteredDocuments = documents.filter(doc =>
-    doc.title.toLowerCase().includes(searchQuery.toLowerCase())
+    doc.file_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (loading) {
@@ -89,10 +236,20 @@ export const DocumentsList = () => {
       <div className="border-b bg-card p-4">
         <div className="flex items-center justify-between gap-4 mb-4">
           <h1 className="text-2xl font-bold">My Documents</h1>
-          <Button onClick={() => navigate("/")}>
-            <Plus className="h-4 w-4 mr-2" />
-            Upload New
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={fetchDocuments}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button onClick={() => navigate("/")}>
+              <Plus className="h-4 w-4 mr-2" />
+              Upload New
+            </Button>
+          </div>
         </div>
 
         {/* Search and View Controls */}
@@ -156,20 +313,55 @@ export const DocumentsList = () => {
             {filteredDocuments.map((doc) => (
               <Card
                 key={doc.id}
-                className="p-4 cursor-pointer hover:bg-accent transition-colors"
-                onClick={() => navigate(`/editor?doc=${doc.id}`)}
+                className="p-4 hover:shadow-md transition-all group"
               >
                 {viewMode === 'grid' ? (
                   <div className="space-y-3">
                     <div className="aspect-[3/4] bg-muted rounded-md flex items-center justify-center">
                       <FileText className="h-12 w-12 text-muted-foreground" />
                     </div>
-                    <div className="space-y-1">
-                      <h3 className="font-medium truncate">{doc.title}</h3>
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-medium truncate flex-1" title={doc.file_name}>
+                          {doc.file_name}
+                        </h3>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => navigate(`/editor?id=${doc.id}`)}>
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Open
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRenameClick(doc)}>
+                              <Edit2 className="h-4 w-4 mr-2" />
+                              Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => handleDeleteClick(doc)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{formatFileSize(doc.file_size)}</span>
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
+                      <Button 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => navigate(`/editor?id=${doc.id}`)}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-2" />
+                        Open
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -178,11 +370,42 @@ export const DocumentsList = () => {
                       <FileText className="h-6 w-6 text-muted-foreground" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate">{doc.title}</h3>
+                      <h3 className="font-medium truncate" title={doc.file_name}>
+                        {doc.file_name}
+                      </h3>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>{formatFileSize(doc.file_size)}</span>
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        size="sm"
+                        onClick={() => navigate(`/editor?id=${doc.id}`)}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-2" />
+                        Open
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleRenameClick(doc)}>
+                            <Edit2 className="h-4 w-4 mr-2" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => handleDeleteClick(doc)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 )}
@@ -191,6 +414,64 @@ export const DocumentsList = () => {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Document</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{documentToDelete?.file_name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Document</DialogTitle>
+            <DialogDescription>
+              Enter a new name for "{documentToRename?.file_name}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={newFileName}
+              onChange={(e) => setNewFileName(e.target.value)}
+              placeholder="Document name"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !renaming) {
+                  handleRenameConfirm();
+                }
+              }}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              Extension will be preserved automatically
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)} disabled={renaming}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameConfirm} disabled={renaming || !newFileName.trim()}>
+              {renaming ? 'Renaming...' : 'Rename'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

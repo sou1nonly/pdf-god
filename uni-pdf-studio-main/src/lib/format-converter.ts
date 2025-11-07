@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import jsPDF from 'jspdf';
 
 export interface ConversionOptions {
   outputFormat?: 'pdf';
@@ -78,64 +79,62 @@ const convertImageToPDF = async (
 
     onProgress?.(30);
 
-    // Create canvas for PDF generation
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    if (!ctx) {
-      throw new Error('Failed to get canvas context');
-    }
-
-    // Set canvas size (A4 aspect ratio)
-    const maxWidth = 595; // A4 width in points
-    const maxHeight = 842; // A4 height in points
-    
-    let width = img.width;
-    let height = img.height;
-    
-    // Scale to fit A4 while maintaining aspect ratio
-    if (width > maxWidth || height > maxHeight) {
-      const ratio = Math.min(maxWidth / width, maxHeight / height);
-      width *= ratio;
-      height *= ratio;
-    }
-
-    canvas.width = width;
-    canvas.height = height;
+    // Create PDF with A4 dimensions
+    const pdf = new jsPDF({
+      orientation: img.width > img.height ? 'landscape' : 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
 
     onProgress?.(50);
 
-    // Draw image on canvas
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(img, 0, 0, width, height);
+    // Get PDF page dimensions
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    // Calculate image dimensions to fit page while maintaining aspect ratio
+    const imgWidth = img.width;
+    const imgHeight = img.height;
+    const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
+    
+    const finalWidth = imgWidth * ratio;
+    const finalHeight = imgHeight * ratio;
+    
+    // Center the image on the page
+    const x = (pageWidth - finalWidth) / 2;
+    const y = (pageHeight - finalHeight) / 2;
 
     onProgress?.(70);
 
-    // Convert canvas to blob
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Failed to create blob'));
-        },
-        'image/png',
-        quality === 'high' ? 0.95 : quality === 'medium' ? 0.85 : 0.75
-      );
-    });
+    // Add image to PDF
+    const imageFormat = file.type.split('/')[1].toUpperCase();
+    console.log('Adding image to PDF - Format:', imageFormat, 'Dimensions:', finalWidth, 'x', finalHeight);
+    
+    pdf.addImage(
+      imageUrl,
+      imageFormat === 'JPG' ? 'JPEG' : imageFormat,
+      x,
+      y,
+      finalWidth,
+      finalHeight,
+      undefined,
+      quality === 'high' ? 'SLOW' : quality === 'medium' ? 'MEDIUM' : 'FAST'
+    );
 
     onProgress?.(90);
+
+    // Convert to blob
+    const pdfBlob = pdf.output('blob');
+    console.log('PDF blob created - Size:', pdfBlob.size, 'Type:', pdfBlob.type);
 
     // Clean up
     URL.revokeObjectURL(imageUrl);
 
     onProgress?.(100);
 
-    // Note: For production, you'd want to use a library like jsPDF
-    // to create actual PDF files. This is a simplified version.
     return {
       success: true,
-      blob: new Blob([blob], { type: 'application/pdf' }),
+      blob: pdfBlob,
     };
   } catch (error: any) {
     console.error('Image to PDF conversion error:', error);
@@ -163,15 +162,52 @@ const convertTextToPDF = async (
 
     onProgress?.(50);
 
-    // For production, use jsPDF or similar library
-    // This is a placeholder implementation
-    const blob = new Blob([text], { type: 'text/plain' });
+    // Create PDF
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    // Set font
+    pdf.setFontSize(12);
+    
+    // Split text into lines that fit the page width
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 20;
+    const maxLineWidth = pageWidth - (margin * 2);
+    
+    const lines = pdf.splitTextToSize(text, maxLineWidth);
+    
+    // Add text to PDF with pagination
+    const lineHeight = 7;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const maxLinesPerPage = Math.floor((pageHeight - (margin * 2)) / lineHeight);
+    
+    let currentPage = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const lineIndex = i % maxLinesPerPage;
+      
+      // Add new page if needed
+      if (i > 0 && lineIndex === 0) {
+        pdf.addPage();
+        currentPage++;
+      }
+      
+      // Add line to page
+      pdf.text(lines[i], margin, margin + (lineIndex * lineHeight));
+    }
+
+    onProgress?.(90);
+
+    // Convert to blob
+    const pdfBlob = pdf.output('blob');
 
     onProgress?.(100);
 
     return {
       success: true,
-      blob: new Blob([blob], { type: 'application/pdf' }),
+      blob: pdfBlob,
     };
   } catch (error: any) {
     console.error('Text to PDF conversion error:', error);
@@ -246,9 +282,12 @@ export const convertAndCreatePDF = async (
   file: File,
   options: ConversionOptions = {}
 ): Promise<File | null> => {
+  console.log('Converting file:', file.name, 'Type:', file.type);
+  
   const result = await convertToPDF(file, options);
 
   if (!result.success || !result.blob) {
+    console.error('Conversion failed:', result.error);
     return null;
   }
 
@@ -258,6 +297,8 @@ export const convertAndCreatePDF = async (
     type: 'application/pdf',
     lastModified: Date.now(),
   });
+
+  console.log('Converted file created:', pdfFile.name, 'Size:', pdfFile.size, 'Type:', pdfFile.type);
 
   return pdfFile;
 };
