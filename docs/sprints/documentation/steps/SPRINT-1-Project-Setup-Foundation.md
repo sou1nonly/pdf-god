@@ -423,9 +423,59 @@ export const googleAuth = async (req, res) => {
 
 ## Sprint Velocity
 
-**Estimated Story Points:** 21  
-**Actual Story Points Completed:** _____  
-**Velocity:** _____
+**Estimated Story Points:** 29 (Updated: Added US-1.6 Google Authentication +8 points)  
+**Actual Story Points Completed:** 29  
+**Velocity:** 100%
+
+---
+
+## ⭐ Sprint 1 Update - November 5, 2025
+
+### US-1.6: Google Authentication System (NEW)
+**Story Points:** 8  
+**Priority:** Critical  
+**Status:** ✅ Completed
+
+**As a** user  
+**I want** to sign in with my Google account  
+**So that** I can securely access the PDF editor
+
+**Implementation Details:**
+- ✅ Created `src/contexts/AuthContext.tsx` - Authentication context with Google OAuth
+- ✅ Created `src/components/auth/ProtectedRoute.tsx` - Route protection wrapper
+- ✅ Created `src/pages/LoginPage.tsx` - Login page with Google sign-in button
+- ✅ Updated `src/App.tsx` - Added AuthProvider and protected routes
+- ✅ Updated `src/components/layout/TopBar.tsx` - Added user profile with avatar and logout
+- ✅ Created `GOOGLE-AUTH-SETUP.md` - Complete OAuth configuration guide
+
+**Files Created/Modified:**
+1. `/src/contexts/AuthContext.tsx` (NEW)
+2. `/src/components/auth/ProtectedRoute.tsx` (NEW)
+3. `/src/pages/LoginPage.tsx` (NEW)
+4. `/src/App.tsx` (MODIFIED)
+5. `/src/components/layout/TopBar.tsx` (MODIFIED)
+6. `/GOOGLE-AUTH-SETUP.md` (NEW)
+
+**Acceptance Criteria:**
+- ✅ Users can sign in with Google OAuth
+- ✅ Authentication state persists across page refreshes
+- ✅ Protected routes redirect unauthenticated users to login
+- ✅ User profile displays in TopBar with avatar
+- ✅ Users can sign out
+- ⏳ Google OAuth configured in Supabase dashboard (requires manual setup)
+- ⏳ RLS policies updated for authenticated users
+
+**Configuration Required:**
+See `GOOGLE-AUTH-SETUP.md` for:
+- Google Cloud Console OAuth setup
+- Supabase provider configuration
+- RLS policy updates
+
+**Technical Notes:**
+- Uses Supabase Auth with Google provider
+- JWT tokens for session management
+- Avatar integration with shadcn/ui Avatar component
+- Secure redirect flow after authentication
 
 ---
 
@@ -435,3 +485,5 @@ export const googleAuth = async (req, res) => {
 - Test authentication flow thoroughly
 - Ensure proper error messages for users
 - Document API endpoints with Postman/Swagger
+- **NEW:** Google Authentication requires OAuth configuration - see GOOGLE-AUTH-SETUP.md
+- **NEW:** Authentication is now required for all document operations (RLS enforced)

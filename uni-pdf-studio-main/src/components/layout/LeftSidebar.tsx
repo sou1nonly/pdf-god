@@ -2,13 +2,17 @@ import { ChevronLeft, Grid, Bookmark, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 interface LeftSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
+  totalPages?: number;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
 }
 
-export const LeftSidebar = ({ isOpen, onToggle }: LeftSidebarProps) => {
+export const LeftSidebar = ({ isOpen, onToggle, totalPages = 1, currentPage = 1, onPageChange }: LeftSidebarProps) => {
   if (!isOpen) {
     return (
       <div className="w-12 border-r bg-card flex flex-col items-center py-2">
@@ -56,12 +60,26 @@ export const LeftSidebar = ({ isOpen, onToggle }: LeftSidebarProps) => {
 
         <TabsContent value="thumbnails" className="flex-1 overflow-auto p-3 m-0">
           <div className="space-y-2">
-            <div className="aspect-[8.5/11] bg-muted rounded border-2 border-primary flex items-center justify-center hover:bg-muted/70 transition-smooth cursor-pointer">
-              <span className="text-xs font-medium">Page 1</span>
-            </div>
-            <div className="aspect-[8.5/11] bg-muted rounded border flex items-center justify-center hover:bg-muted/70 transition-smooth cursor-pointer">
-              <span className="text-xs font-medium text-muted-foreground">Page 2</span>
-            </div>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+              <div
+                key={pageNum}
+                onClick={() => onPageChange?.(pageNum)}
+                className={cn(
+                  "aspect-[8.5/11] bg-muted rounded cursor-pointer transition-smooth hover:bg-muted/70 flex flex-col items-center justify-center p-2",
+                  pageNum === currentPage ? "border-2 border-primary" : "border"
+                )}
+              >
+                <span className={cn(
+                  "text-xs font-medium",
+                  pageNum === currentPage ? "" : "text-muted-foreground"
+                )}>
+                  Page {pageNum}
+                </span>
+                <div className="flex-1 w-full bg-background/50 rounded mt-1 flex items-center justify-center">
+                  <span className="text-2xl font-bold text-muted-foreground/30">{pageNum}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </TabsContent>
 

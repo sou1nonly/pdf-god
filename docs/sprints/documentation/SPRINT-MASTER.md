@@ -3,7 +3,7 @@
 **Project:** UniPDF Studio  
 **Total Sprints:** 7  
 **Project Duration:** 14 weeks  
-**Last Updated:** November 4, 2025
+**Last Updated:** November 7, 2025
 
 ---
 
@@ -11,15 +11,16 @@
 
 | Sprint | Focus Area | Story Points | Status | Progress |
 |--------|-----------|--------------|--------|----------|
-| Sprint 1 | Project Setup & Foundation | 21 | ✅ Completed | 100% |
-| Sprint 2 | File Upload & PDF Rendering | 31 | ✅ Completed | 100% |
-| Sprint 3 | PDF Editing Tools | 39 | 🔄 In Progress | 0% |
-| Sprint 4 | AI-Powered Features | 36 | ✅ Planned | 0% |
-| Sprint 5 | OCR & File Management | 39 | ✅ Planned | 0% |
-| Sprint 6 | Collaboration & Cloud | 39 | ✅ Planned | 0% |
-| Sprint 7 | Polish, Testing & Deployment | 42 | ✅ Planned | 0% |
+| Sprint 1 | Project Setup & Foundation | 29 | ✅ Completed | 100% |
+| Sprint 2 | File Upload & PDF Rendering | 46 | ✅ Completed | 100% |
+| Sprint 3 | PDF Editing Tools | 59 | � Planned | 0% |
+| Sprint 4 | AI-Powered Features | 36 | 📋 Planned | 0% |
+| Sprint 5 | OCR & File Management | 39 | 📋 Planned | 0% |
+| Sprint 6 | Collaboration & Cloud | 39 | 📋 Planned | 0% |
+| Sprint 7 | Polish, Testing & Deployment | 42 | 📋 Planned | 0% |
 
-**Total Estimated Story Points:** 247
+**Total Estimated Story Points:** 290  
+**Completed Story Points:** 75 (25.9%)
 
 ---
 
@@ -42,7 +43,7 @@
 **File:** `steps/SPRINT-1-Project-Setup-Foundation.md`  
 **Duration:** 2 weeks  
 **Status:** ✅ Completed  
-**Date Completed:** November 4, 2025
+**Date Completed:** November 5, 2025 (Updated with Authentication)
 
 **User Stories:**
 
@@ -101,6 +102,20 @@ US-1.5:
     - Verify environment variables (.env) ✅
     - Create initial database schema ✅
     - Set up RLS policies ✅
+
+US-1.6:
+  title: "Google Authentication System"
+  story_points: 8
+  priority: Critical
+  status: completed
+  date_completed: November 5, 2025
+  tasks:
+    - Create AuthContext and useAuth hook ✅
+    - Build LoginPage with Google OAuth ✅
+    - Implement ProtectedRoute wrapper ✅
+    - Add user profile to TopBar with avatar ✅
+    - Configure Google OAuth provider in Supabase
+    - Update RLS policies for authenticated users
 ```
 
 **Notes:**
@@ -109,6 +124,9 @@ US-1.5:
 - ✅ Development environment ready for Sprint 2
 - ✅ Database schema created with RLS policies
 - ✅ Project builds and runs successfully
+- ✅ Google Authentication implemented (added Nov 5, 2025)
+- 📝 OAuth configuration required in Supabase dashboard
+- 📝 See GOOGLE-AUTH-SETUP.md for configuration steps
 
 ---
 
@@ -117,7 +135,7 @@ US-1.5:
 **File:** `steps/SPRINT-2-File-Upload-PDF-Rendering.md`  
 **Duration:** 2 weeks  
 **Status:** ✅ Completed  
-**Date Completed:** November 4, 2025
+**Date Completed:** November 7, 2025
 
 **User Stories:**
 
@@ -132,6 +150,7 @@ US-2.1:
     - Add file validation (type, size, duplicates) ✅
     - Show upload progress with progress bars ✅
     - Handle multiple file uploads (up to 5 files) ✅
+    - Implement file conversion progress tracking ✅
 
 US-2.2:
   title: "Cloud Storage Integration"
@@ -144,6 +163,8 @@ US-2.2:
     - Generate public/signed URLs ✅
     - Add file metadata storage in database ✅
     - Create storage policies with RLS ✅
+    - Implement user-scoped folder structure (user_id/) ✅
+    - Fix documents table schema with all required columns ✅
 
 US-2.3:
   title: "PDF Rendering Engine"
@@ -157,6 +178,7 @@ US-2.3:
     - Create page navigation ✅
     - Add rotation support (90°, 180°, 270°) ✅
     - Implement download functionality ✅
+    - Bundle PDF.js worker locally to fix CORS issues ✅
 
 US-2.4:
   title: "Document List View"
@@ -168,17 +190,39 @@ US-2.4:
     - Generate thumbnails ✅
     - Add search functionality ✅
     - Implement view mode toggle ✅
+    - Add refresh button with loading state ✅
+    - Fix navigation with document ID parameters ✅
 
 US-2.5:
   title: "Format Conversion"
-  story_points: 5
-  priority: Medium
-  status: deferred
+  story_points: 10
+  priority: High
+  status: completed
+  date_completed: November 7, 2025
   tasks:
-    - Deferred to Sprint 3 or 4
-    - DOCX to PDF conversion
-    - File type detection
-    - Handle conversion errors
+    - Install and integrate jsPDF library ✅
+    - Implement image to PDF conversion (.jpg, .jpeg, .png, .gif, .bmp, .tiff, .webp) ✅
+    - Implement text to PDF conversion (.txt, .rtf) ✅
+    - Add A4 page formatting with proper scaling ✅
+    - File type detection and validation ✅
+    - Conversion progress tracking ✅
+    - Handle conversion errors gracefully ✅
+    - Add conversion toast notifications ✅
+    
+US-2.6:
+  title: "Document Management Features"
+  story_points: 10
+  priority: High
+  status: completed
+  date_completed: November 7, 2025
+  tasks:
+    - Implement delete document functionality ✅
+    - Add rename document feature ✅
+    - Create confirmation dialogs for destructive actions ✅
+    - Add dropdown menu for document actions ✅
+    - Update UI with icons (Edit, Delete, More) ✅
+    - Delete from both storage and database ✅
+    - Preserve file extensions during rename ✅
 ```
 
 **Notes:**
@@ -186,15 +230,21 @@ US-2.5:
 - ✅ Supabase Storage bucket configured with RLS policies
 - ✅ File upload with validation and progress tracking
 - ✅ Document management with grid/list views
-- 📝 Format conversion (US-2.5) deferred to focus on core features
+- ✅ Format conversion implemented with jsPDF (images and text to PDF)
+- ✅ PDF.js worker bundled locally to avoid CDN CORS issues
+- ✅ Delete and rename functionality with confirmation dialogs
+- ✅ User-scoped storage folders for better organization
+- ✅ Enhanced database schema with file_type and storage_path columns
+- 📝 Word document conversion (.doc, .docx) requires backend service (deferred)
 
 ---
 
 ### SPRINT 3: PDF Editing Tools
 
 **File:** `steps/SPRINT-3-PDF-Editing-Tools.md`  
-**Duration:** 2 weeks  
-**Status:** Planned
+**Duration:** 3 weeks  
+**Status:** Planned  
+**Story Points:** 59
 
 **User Stories:**
 
@@ -203,60 +253,143 @@ US-3.1:
   title: "Text Editing Mode"
   story_points: 13
   priority: Critical
-  status: active
+  status: planned
   tasks:
-    - Integrate Fabric.js
-    - Text selection and editing
-    - Font formatting toolbar
+    - Integrate Fabric.js for canvas manipulation
+    - Implement text selection and editing
+    - Create font formatting toolbar (family, size, color, bold, italic)
+    - Add text alignment controls
     - Save text changes to PDF
+    - Handle multi-line text boxes
 
 US-3.2:
   title: "Annotation Tools"
   story_points: 8
   priority: High
-  status: active
+  status: planned
   tasks:
-    - Highlight tool with colors
-    - Underline and strikethrough
-    - Sticky note comments
+    - Highlight tool with color picker (yellow, green, blue, pink)
+    - Underline and strikethrough tools
+    - Sticky note comments with user attribution
     - Annotation layer management
+    - Toggle annotation visibility
+    - Export annotations separately
 
 US-3.3:
   title: "Drawing Tools"
   story_points: 8
   priority: High
-  status: active
+  status: planned
   tasks:
-    - Freehand drawing
-    - Shape tools (rectangle, circle, arrow)
-    - Eraser tool
-    - Drawing layer system
+    - Freehand drawing with pen tool
+    - Shape tools (rectangle, circle, arrow, line)
+    - Color picker for drawings
+    - Stroke width adjustment
+    - Eraser tool with size options
+    - Drawing layer system with Z-index control
 
 US-3.4:
   title: "Image Insertion"
   story_points: 5
   priority: Medium
-  status: active
+  status: planned
   tasks:
-    - Image upload for insertion
-    - Resize and rotate images
-    - Position images on PDF
+    - Image upload for insertion (drag-and-drop)
+    - Resize images with aspect ratio lock
+    - Rotate images (free rotation and 90° increments)
+    - Position images anywhere on PDF page
+    - Image opacity control
+    - Delete inserted images
 
 US-3.5:
   title: "Undo/Redo System"
   story_points: 5
   priority: High
-  status: active
+  status: planned
   tasks:
-    - Implement history manager
-    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+    - Implement history manager with state snapshots
+    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y / Cmd+Z, Cmd+Shift+Z)
     - 50-step history buffer
+    - Visual undo/redo buttons in toolbar
+    - Clear history on document save
+    - History persistence across sessions
+
+US-3.6:
+  title: "Stamps & Signatures"
+  story_points: 8
+  priority: High
+  status: planned
+  tasks:
+    - Pre-made stamps (Approved, Rejected, Confidential, Draft, Final, Copy)
+    - Custom stamp creation with text input
+    - Date/time stamps (auto-updating and static)
+    - Digital signature placement area
+    - Handwritten signature drawing with smooth curves
+    - Form validation stamps (✓, ✗)
+    - Stamp rotation and resizing
+
+US-3.7:
+  title: "PDF Bookmarks & Navigation"
+  story_points: 5
+  priority: Medium
+  status: planned
+  tasks:
+    - Create/edit bookmarks panel
+    - Nested bookmark hierarchy (parent/child structure)
+    - Jump to specific pages on bookmark click
+    - Auto-generate table of contents from headings
+    - Bookmark search/filter functionality
+    - Drag-and-drop bookmark reordering
+    - Bookmark export/import
+
+US-3.8:
+  title: "Hyperlinks & Cross-References"
+  story_points: 5
+  priority: Medium
+  status: planned
+  tasks:
+    - Insert clickable links (external URLs, email, page jumps)
+    - Edit existing link destinations
+    - Link validation (check if URLs are valid)
+    - Visual link indicators (underline, color)
+    - Link hover previews with tooltip
+    - Remove/disable links
+    - Link statistics (count, broken links)
+
+US-3.9:
+  title: "Advanced Text Tools"
+  story_points: 7
+  priority: High
+  status: planned
+  tasks:
+    - Find & Replace across entire document
+    - Case-sensitive and whole-word search
+    - Spell checker with suggestions
+    - Text alignment tools (left, center, right, justify)
+    - Line spacing adjustments (1.0x, 1.5x, 2.0x, custom)
+    - Text box rotation (free and fixed angles)
+    - Character and word count
+    - Text styling presets
 ```
 
 **Notes:**
-- Fabric.js provides excellent canvas manipulation
-- Performance critical for smooth editing
-- Undo/redo essential for good UX
+- Fabric.js provides excellent canvas manipulation for all editing tools
+- Performance critical for smooth editing experience
+- Undo/redo essential for good user experience
+- Stamps and signatures add professional document workflow support
+- Bookmarks improve navigation for large documents
+- Hyperlinks enable interactive PDFs
+- Advanced text tools match commercial PDF editors
+- All tools should work seamlessly together
+- Layer management crucial for complex edits
+
+**Technical Requirements:**
+- Fabric.js v5.x for canvas manipulation
+- PDF-lib for PDF modification and saving
+- Canvas rendering optimization for large documents
+- State management for undo/redo across all tools
+- Keyboard shortcut system
+- Touch and stylus support for drawing/signatures
 
 ---
 
@@ -593,8 +726,8 @@ US-7.5:
 ### Velocity Tracking
 | Sprint | Estimated | Completed | Velocity | Variance |
 |--------|-----------|-----------|----------|----------|
-| Sprint 1 | 21 | - | - | - |
-| Sprint 2 | 31 | - | - | - |
+| Sprint 1 | 29 | 29 | 100% | 0 |
+| Sprint 2 | 31 | 31 | 100% | 0 |
 | Sprint 3 | 39 | - | - | - |
 | Sprint 4 | 36 | - | - | - |
 | Sprint 5 | 39 | - | - | - |
@@ -611,7 +744,7 @@ US-7.5:
 
 ## 🎯 Project Milestones
 
-- [x] **Week 2:** Sprint 1 Complete - Foundation Ready ✅ (Nov 4, 2025)
+- [x] **Week 2:** Sprint 1 Complete - Foundation Ready ✅ (Nov 5, 2025)
 - [x] **Week 4:** Sprint 2 Complete - Basic PDF Operations Working ✅ (Nov 4, 2025)
 - [ ] **Week 6:** Sprint 3 Complete - Full PDF Editing Available
 - [ ] **Week 8:** Sprint 4 Complete - AI Features Live
@@ -695,6 +828,6 @@ npm run validate-sprints
 
 ---
 
-**Last Updated:** November 4, 2025  
-**Next Review:** Start of Sprint 1  
-**Status:** Ready for Development 🚀
+**Last Updated:** November 5, 2025  
+**Next Review:** Start of Sprint 3  
+**Status:** Sprint 1 & 2 Complete - Authentication Added 🚀
