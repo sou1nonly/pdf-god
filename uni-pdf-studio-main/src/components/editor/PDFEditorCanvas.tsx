@@ -4,6 +4,15 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { EditorTool } from './EditorToolbar';
 import { toast } from 'sonner';
 
+// Import custom hooks
+import { useCanvasScheduler } from './hooks/useCanvasScheduler';
+import { useCanvasHistory } from './hooks/useCanvasHistory';
+import { usePDFRenderer } from './hooks/usePDFRenderer';
+import { useTextLayer } from './hooks/useTextLayer';
+import { useSnappingGuidelines } from './hooks/useSnappingGuidelines';
+import { usePerformanceMetrics } from './hooks/usePerformanceMetrics';
+import { logger } from './utils/logger';
+
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
 
@@ -29,6 +38,7 @@ interface PDFEditorCanvasProps {
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
   onObjectSelected?: (objectType: string | null, properties?: any) => void;
   onPageCountChange?: (totalPages: number) => void;
+  onZoomChange?: (zoom: number) => void;
 }
 
 export const PDFEditorCanvas = ({
@@ -53,27 +63,19 @@ export const PDFEditorCanvas = ({
   onHistoryChange,
   onObjectSelected,
   onPageCountChange,
+  onZoomChange,
 }: PDFEditorCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
-  const [pdfDocument, setPdfDocument] = useState<any>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
+  
   const [isDrawing, setIsDrawing] = useState(false);
   const drawingPathRef = useRef<fabric.Path | null>(null);
   const pdfBackgroundSetRef = useRef<boolean>(false);
   const erasedObjectsRef = useRef<boolean>(false);
-  
-  // Snapping guidelines
-  const aligningLineMargin = 10; // Increased from 4 for easier snapping
-  const aligningLineWidth = 2; // Made thicker for better visibility
-  const aligningLineColor = 'rgb(255, 0, 255)'; // Changed to magenta for better visibility
-  const verticalLinesRef = useRef<fabric.Line[]>([]);
-  const horizontalLinesRef = useRef<fabric.Line[]>([]);
-  
-  // History management
-  const historyRef = useRef<any[]>([]);
-  const historyIndexRef = useRef<number>(-1);
-  const maxHistorySteps = 50;
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
   
   // Active text object for formatting
   const [activeTextObject, setActiveTextObject] = useState<fabric.IText | null>(null);
@@ -82,66 +84,30 @@ export const PDFEditorCanvas = ({
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const needsSaveRef = useRef<boolean>(false);
   
-  // Simple render function - just render, no throttling
-  const simpleRender = useCallback(() => {
-    if (fabricCanvasRef.current) {
-      fabricCanvasRef.current.renderAll();
-    }
-  }, []);
-
-  // Save state to history
-  const saveState = useCallback(() => {
-    if (!fabricCanvasRef.current) return;
-
-    const json = fabricCanvasRef.current.toJSON();
-    
-    // Remove future states if we're not at the end
-    historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
-    
-    // Add new state
-    historyRef.current.push(json);
-    
-    // Limit history size
-    if (historyRef.current.length > maxHistorySteps) {
-      historyRef.current.shift();
-    } else {
-      historyIndexRef.current++;
-    }
-
-    // Notify parent about undo/redo availability
-    onHistoryChange(historyIndexRef.current > 0, historyIndexRef.current < historyRef.current.length - 1);
-  }, [onHistoryChange]);
+  // Rendering state to prevent concurrent renders
+  const isRenderingRef = useRef<boolean>(false);
+  const renderTaskRef = useRef<any>(null);
+  const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingRenderRef = useRef<{
+    page: number;
+    zoom: number;
+    rotation: number;
+  } | null>(null);
+  
+  // Initialize all custom hooks
+  const { scheduleRender } = useCanvasScheduler(fabricCanvasRef);
+  const { saveState, undo, redo, clearHistory } = useCanvasHistory(fabricCanvasRef, onHistoryChange);
+  const { pdfDocument, isLoading: isPdfLoading, renderPage } = usePDFRenderer(url, onPageCountChange);
+  const { renderTextLayer, clearCache, clearAllCache } = useTextLayer(activeTool);
+  const { initGuidelinePool, clearGuidelines, handleObjectMoving: handleSnapping } = useSnappingGuidelines(fabricCanvasRef);
+  const { trackRender } = usePerformanceMetrics();
+  
+  logger.info('PDFEditorCanvas', 'Component initialized with hooks');
 
   // Mark that canvas needs to be saved (without actually saving yet)
   const markNeedsSave = useCallback(() => {
     needsSaveRef.current = true;
   }, []);
-
-  // Undo function
-  const undo = useCallback(() => {
-    if (!fabricCanvasRef.current || historyIndexRef.current <= 0) return;
-
-    historyIndexRef.current--;
-    const state = historyRef.current[historyIndexRef.current];
-    
-    fabricCanvasRef.current.loadFromJSON(state, () => {
-      fabricCanvasRef.current?.requestRenderAll();
-      onHistoryChange(historyIndexRef.current > 0, historyIndexRef.current < historyRef.current.length - 1);
-    });
-  }, [onHistoryChange]);
-
-  // Redo function
-  const redo = useCallback(() => {
-    if (!fabricCanvasRef.current || historyIndexRef.current >= historyRef.current.length - 1) return;
-
-    historyIndexRef.current++;
-    const state = historyRef.current[historyIndexRef.current];
-    
-    fabricCanvasRef.current.loadFromJSON(state, () => {
-      fabricCanvasRef.current?.requestRenderAll();
-      onHistoryChange(historyIndexRef.current > 0, historyIndexRef.current < historyRef.current.length - 1);
-    });
-  }, [onHistoryChange]);
 
   // Expose undo/redo to parent
   useEffect(() => {
@@ -150,158 +116,173 @@ export const PDFEditorCanvas = ({
   }, [undo, redo]);
 
   // Auto-save interval - saves every 3 seconds if changes were made
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
+
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (!needsSaveRef.current) return;
+    
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    autoSaveTimeoutRef.current = setTimeout(() => {
       if (needsSaveRef.current && fabricCanvasRef.current) {
         saveState();
         needsSaveRef.current = false;
       }
-    }, 3000); // Every 3 seconds
-
-    return () => clearInterval(interval);
-  }, [saveState]);
-
-  // Snapping helper functions
-  const drawVerticalLine = useCallback((coords: any) => {
-    if (!fabricCanvasRef.current) return null;
+    }, 3000); // 3 seconds of inactivity before save
     
-    const line = new fabric.Line(
-      [coords.x, coords.y1 > coords.y2 ? coords.y2 : coords.y1, coords.x, coords.y2 > coords.y1 ? coords.y2 : coords.y1],
-      {
-        stroke: aligningLineColor,
-        strokeWidth: aligningLineWidth,
-        selectable: false,
-        evented: false,
-      }
-    );
-    fabricCanvasRef.current.add(line);
-    return line;
-  }, []);
-
-  const drawHorizontalLine = useCallback((coords: any) => {
-    if (!fabricCanvasRef.current) return null;
-    
-    const line = new fabric.Line(
-      [coords.x1 > coords.x2 ? coords.x2 : coords.x1, coords.y, coords.x2 > coords.x1 ? coords.x2 : coords.x1, coords.y],
-      {
-        stroke: aligningLineColor,
-        strokeWidth: aligningLineWidth,
-        selectable: false,
-        evented: false,
-      }
-    );
-    fabricCanvasRef.current.add(line);
-    return line;
-  }, []);
-
-  const clearGuidelines = useCallback(() => {
-    if (!fabricCanvasRef.current) return;
-    
-    verticalLinesRef.current.forEach(line => fabricCanvasRef.current?.remove(line));
-    horizontalLinesRef.current.forEach(line => fabricCanvasRef.current?.remove(line));
-    verticalLinesRef.current = [];
-    horizontalLinesRef.current = [];
-    fabricCanvasRef.current.renderAll();
-  }, []);
-
-  // Load PDF
-  useEffect(() => {
-    const loadPDF = async () => {
-      try {
-        const loadingTask = pdfjsLib.getDocument(url);
-        const pdf = await loadingTask.promise;
-        setPdfDocument(pdf);
-        
-        // Notify parent of total page count
-        if (onPageCountChange) {
-          onPageCountChange(pdf.numPages);
-        }
-      } catch (error) {
-        console.error('Error loading PDF:', error);
-        toast.error('Failed to load PDF');
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-
-    if (url) {
-      loadPDF();
-    }
-  }, [url]);
+  }, [needsSaveRef.current, saveState]); // Re-run when save flag changes
 
   // Render PDF page
   useEffect(() => {
     // Reset background flag when dependencies change (page/zoom/rotation)
     pdfBackgroundSetRef.current = false;
     
-    const renderPage = async () => {
-      if (!pdfDocument || !canvasRef.current || !containerRef.current) return;
-
-      try {
-        const page = await pdfDocument.getPage(currentPage);
-        const viewport = page.getViewport({ scale: zoom / 100, rotation });
-
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
+    // Clear any pending timeout
+    if (renderTimeoutRef.current) {
+      clearTimeout(renderTimeoutRef.current);
+    }
+    
+    // Store pending render request
+    pendingRenderRef.current = {
+      page: currentPage,
+      zoom: zoom,
+      rotation: rotation
+    };
+    
+    // Debounce rapid changes (wait 100ms)
+    renderTimeoutRef.current = setTimeout(() => {
+      const renderPDFPage = async () => {
+        if (!pdfDocument || !canvasRef.current || !containerRef.current) return;
         
-        if (!context) return;
-
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-
-        await page.render({
-          canvasContext: context,
-          viewport: viewport,
-        }).promise;
-
-        // Initialize or update Fabric canvas
-        if (!fabricCanvasRef.current) {
-          const fabricCanvas = new fabric.Canvas('editor-canvas', {
-            width: viewport.width,
-            height: viewport.height,
-            isDrawingMode: false,
-            renderOnAddRemove: true,
-            enableRetinaScaling: true,
-            skipOffscreen: true,
-            stateful: false,
-          });
-          
-          fabricCanvasRef.current = fabricCanvas;
-          
-          // Set PDF as background
-          fabricCanvas.setBackgroundImage(
-            canvas.toDataURL(),
-            () => fabricCanvas.requestRenderAll(),
-            {
-              scaleX: 1,
-              scaleY: 1,
-            }
-          );
-          pdfBackgroundSetRef.current = true;
-
-          // Save initial state
-          saveState();
-        } else {
-          // Update canvas dimensions
-          fabricCanvasRef.current.setWidth(viewport.width);
-          fabricCanvasRef.current.setHeight(viewport.height);
-          
-          // Update background with new PDF render
-          fabricCanvasRef.current.setBackgroundImage(
-            canvas.toDataURL(),
-            () => fabricCanvasRef.current?.requestRenderAll(),
-            {
-              scaleX: 1,
-              scaleY: 1,
-            }
-          );
-          pdfBackgroundSetRef.current = true;
+        // Cancel any ongoing render task
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+            logger.info('PDFEditorCanvas', 'Cancelled previous render for new request');
+          } catch (e) {
+            // Ignore cancellation errors
+          }
+          renderTaskRef.current = null;
         }
-      } catch (error) {
-        console.error('Error rendering page:', error);
+        
+        // Wait if currently rendering
+        if (isRenderingRef.current) {
+          logger.warn('PDFEditorCanvas', 'Waiting for current render to complete...');
+          // Wait a bit and try again
+          setTimeout(() => renderPDFPage(), 50);
+          return;
+        }
+        
+        isRenderingRef.current = true;
+
+        try {
+          logger.info('PDFEditorCanvas', `Rendering page ${currentPage} at ${zoom}% zoom`);
+          const startTime = performance.now();
+          
+          // Use the hook's renderPage function
+          const { viewport, page } = await renderPage(currentPage, canvasRef.current, zoom, rotation);
+
+          // Track performance
+          trackRender(performance.now() - startTime);
+
+          // Render text layer using our hook
+          if (textLayerRef.current) {
+            await renderTextLayer(page, currentPage, zoom, textLayerRef.current);
+          }
+
+          // Initialize or update Fabric canvas
+          if (!fabricCanvasRef.current) {
+            const fabricCanvas = new fabric.Canvas('editor-canvas', {
+              width: viewport.width,
+              height: viewport.height,
+              isDrawingMode: false,
+              renderOnAddRemove: false,
+              enableRetinaScaling: false,
+              skipOffscreen: true,
+              stateful: false,
+            });
+            
+            fabricCanvasRef.current = fabricCanvas;
+            
+            // Initialize snapping guidelines
+            initGuidelinePool();
+            
+            // Set PDF as background
+            canvasRef.current.toBlob(async (blob) => {
+              if (!blob) return;
+              const url = URL.createObjectURL(blob);
+              fabric.Image.fromURL(url, (img) => {
+                img.set({ selectable: false, evented: false });
+                fabricCanvasRef.current?.setBackgroundImage(img, () => {
+                  scheduleRender();
+                  URL.revokeObjectURL(url);
+                });
+              }, { crossOrigin: 'anonymous' });
+            }, 'image/png');
+            pdfBackgroundSetRef.current = true;
+
+            // Save initial state
+            saveState();
+          } else {
+            // Update canvas dimensions
+            fabricCanvasRef.current.setWidth(viewport.width);
+            fabricCanvasRef.current.setHeight(viewport.height);
+            
+            // Update background with new PDF render
+            canvasRef.current.toBlob(async (blob) => {
+              if (!blob) return;
+              const url = URL.createObjectURL(blob);
+              fabric.Image.fromURL(url, (img) => {
+                img.set({ selectable: false, evented: false });
+                fabricCanvasRef.current?.setBackgroundImage(img, () => {
+                  scheduleRender();
+                  URL.revokeObjectURL(url);
+                });
+              }, { crossOrigin: 'anonymous' });
+            }, 'image/png');
+            pdfBackgroundSetRef.current = true;
+          }
+          
+          // Clear pending render
+          pendingRenderRef.current = null;
+          
+        } catch (error: any) {
+          // Don't log cancellation errors as errors
+          if (error?.name === 'RenderingCancelledException') {
+            logger.info('PDFEditorCanvas', 'Render cancelled (normal during navigation)');
+            return;
+          }
+          logger.error('PDFEditorCanvas', 'Error rendering page:', error);
+          console.error('Error rendering page:', error);
+        } finally {
+          isRenderingRef.current = false;
+        }
+      };
+
+      renderPDFPage();
+    }, 100); // 100ms debounce
+    
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      if (renderTimeoutRef.current) {
+        clearTimeout(renderTimeoutRef.current);
+      }
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch (e) {
+          // Ignore cancellation errors
+        }
       }
     };
-
-    renderPage();
-  }, [pdfDocument, currentPage, zoom, rotation, saveState]);
+  }, [pdfDocument, currentPage, zoom, rotation, renderPage, renderTextLayer, saveState, initGuidelinePool, scheduleRender, trackRender]);
 
   // Handle tool changes
   useEffect(() => {
@@ -342,107 +323,83 @@ export const PDFEditorCanvas = ({
     }
   }, [activeTool, strokeWidth, strokeColor]);
 
-  // Update shape fill and opacity when toolbar controls change
+  // Debounced effect for updating shape and text properties
+  const updateTimeoutRef = useRef<NodeJS.Timeout>();
+
   useEffect(() => {
-    if (!fabricCanvasRef.current) return;
-
-    const canvas = fabricCanvasRef.current;
-    const activeObject = canvas.getActiveObject();
-
-    if (activeObject && (activeObject.type === 'rect' || activeObject.type === 'circle')) {
-      const currentFill = activeObject.fill;
-      const currentOpacity = activeObject.opacity;
-      const newOpacity = fillOpacity / 100;
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+    
+    updateTimeoutRef.current = setTimeout(() => {
+      if (!fabricCanvasRef.current) return;
       
-      // Only update if values actually changed
-      if (currentFill !== fillColor || currentOpacity !== newOpacity) {
+      const canvas = fabricCanvasRef.current;
+      const activeObject = canvas.getActiveObject();
+      
+      if (!activeObject) return;
+      
+      let updated = false;
+      
+      // Update shapes
+      if (activeObject.type === 'rect' || activeObject.type === 'circle') {
         activeObject.set({
           fill: fillColor,
-          opacity: newOpacity,
+          opacity: fillOpacity / 100,
+          stroke: strokeColor,
+          strokeWidth: strokeWidth,
         });
-        simpleRender();
-        markNeedsSave();
+        updated = true;
       }
-    }
-  }, [fillColor, fillOpacity, markNeedsSave, simpleRender]);
-
-  // Update stroke color and width when toolbar controls change
-  useEffect(() => {
-    if (!fabricCanvasRef.current) return;
-
-    const canvas = fabricCanvasRef.current;
-    const activeObject = canvas.getActiveObject();
-
-    if (activeObject && (activeObject.type === 'rect' || activeObject.type === 'circle' || activeObject.type === 'line' || activeObject.type === 'path')) {
-      const currentStroke = activeObject.stroke;
-      const currentStrokeWidth = activeObject.strokeWidth;
       
-      // Only update if values actually changed
-      if (currentStroke !== strokeColor || currentStrokeWidth !== strokeWidth) {
+      // Update paths/lines
+      if (activeObject.type === 'line' || activeObject.type === 'path') {
         activeObject.set({
           stroke: strokeColor,
           strokeWidth: strokeWidth,
         });
-        simpleRender();
+        updated = true;
+      }
+      
+      // Update text
+      if (activeObject.type === 'i-text') {
+        const textObj = activeObject as fabric.IText;
+        textObj.set({
+          fontFamily: fontFamily,
+          fontSize: fontSize,
+          fill: textColor,
+          fontWeight: isBold ? 'bold' : 'normal',
+          fontStyle: isItalic ? 'italic' : 'normal',
+        });
+        updated = true;
+      }
+      
+      if (updated) {
+        scheduleRender();
         markNeedsSave();
       }
-    }
-  }, [strokeColor, strokeWidth, markNeedsSave, simpleRender]);
-
-  // Update text formatting when toolbar controls change
-  useEffect(() => {
-    if (!fabricCanvasRef.current) return;
+    }, 50); // 50ms debounce
     
-    const canvas = fabricCanvasRef.current;
-    const activeObj = canvas.getActiveObject();
-    
-    if (activeObj && activeObj.type === 'i-text') {
-      const textObj = activeObj as fabric.IText;
-      
-      // Update font family
-      if (textObj.fontFamily !== fontFamily) {
-        textObj.set('fontFamily', fontFamily);
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
       }
-      
-      // Update font size
-      if (textObj.fontSize !== fontSize) {
-        textObj.set('fontSize', fontSize);
-      }
-      
-      // Update text color
-      if (textObj.fill !== textColor) {
-        textObj.set('fill', textColor);
-      }
-      
-      // Update bold
-      const currentWeight = textObj.fontWeight;
-      const shouldBeBold = isBold ? 'bold' : 'normal';
-      if (currentWeight !== shouldBeBold) {
-        textObj.set('fontWeight', shouldBeBold);
-      }
-      
-      // Update italic
-      const currentStyle = textObj.fontStyle;
-      const shouldBeItalic = isItalic ? 'italic' : 'normal';
-      if (currentStyle !== shouldBeItalic) {
-        textObj.set('fontStyle', shouldBeItalic);
-      }
-      
-      simpleRender();
-      markNeedsSave();
-    }
-  }, [fontSize, fontFamily, textColor, isBold, isItalic, markNeedsSave, simpleRender]);
+    };
+  }, [fillColor, fillOpacity, strokeColor, strokeWidth, fontFamily, fontSize, textColor, isBold, isItalic]);
 
-  // Handle canvas mouse events
-  useEffect(() => {
-    if (!fabricCanvasRef.current) return;
+  const handlersRef = useRef({
+    mouseDown: (e: any) => {},
+    mouseMove: (e: any) => {},
+    mouseUp: (e: any) => {},
+    objectAdded: (e: any) => {},
+  });
 
-    const canvas = fabricCanvasRef.current;
-
-    const handleMouseDown = (e: fabric.IEvent) => {
+  // CREATE stable handlers (add as separate functions):
+  const createMouseDownHandler = useCallback(() => {
+    return (e: any) => {
       if (!e.pointer) return;
       
-      const pointer = canvas.getPointer(e.e);
+      const pointer = fabricCanvasRef.current?.getPointer(e.e);
       
       // Handle eraser - remove objects under cursor
       if (activeTool === 'eraser') {
@@ -452,8 +409,8 @@ export const PDFEditorCanvas = ({
         const eraserRadius = 10; // Fixed eraser size
         const objectsToRemove: fabric.Object[] = [];
         
-        canvas.forEachObject((obj) => {
-          if (obj === canvas.backgroundImage) return;
+        fabricCanvasRef.current.forEachObject((obj) => {
+          if (obj === fabricCanvasRef.current?.backgroundImage) return;
           
           const objBounds = obj.getBoundingRect();
           if (
@@ -468,15 +425,15 @@ export const PDFEditorCanvas = ({
         
         if (objectsToRemove.length > 0) {
           erasedObjectsRef.current = true;
-          objectsToRemove.forEach(obj => canvas.remove(obj));
-          simpleRender();
+          objectsToRemove.forEach(obj => fabricCanvasRef.current?.remove(obj));
+          scheduleRender();
         }
         return;
       }
       
       // For select tool, prevent single-click selection - only allow double-click
       if (activeTool === 'select') {
-        const clickedObject = canvas.findTarget(e.e as any, false);
+        const clickedObject = fabricCanvasRef.current.findTarget(e.e as any, false);
         if (clickedObject) {
           // Prevent selection on single click
           e.e.preventDefault();
@@ -485,7 +442,7 @@ export const PDFEditorCanvas = ({
       }
       
       // For other tools, check if user is clicking on an existing object
-      const clickedObject = canvas.findTarget(e.e as any, false);
+      const clickedObject = fabricCanvasRef.current.findTarget(e.e as any, false);
       if (clickedObject && activeTool !== 'text') {
         // User is clicking on an existing object - allow selection/manipulation
         return;
@@ -505,8 +462,8 @@ export const PDFEditorCanvas = ({
             fontStyle: isItalic ? 'italic' : 'normal',
             selectable: false,
           });
-          canvas.add(text);
-          canvas.setActiveObject(text);
+          fabricCanvasRef.current.add(text);
+          fabricCanvasRef.current.setActiveObject(text);
           text.enterEditing();
           saveState();
           break;
@@ -523,8 +480,8 @@ export const PDFEditorCanvas = ({
             strokeWidth: strokeWidth,
             selectable: false,
           });
-          canvas.add(rect);
-          canvas.setActiveObject(rect);
+          fabricCanvasRef.current.add(rect);
+          fabricCanvasRef.current.setActiveObject(rect);
           break;
 
         case 'circle':
@@ -538,8 +495,8 @@ export const PDFEditorCanvas = ({
             strokeWidth: strokeWidth,
             selectable: false,
           });
-          canvas.add(circle);
-          canvas.setActiveObject(circle);
+          fabricCanvasRef.current.add(circle);
+          fabricCanvasRef.current.setActiveObject(circle);
           break;
 
         case 'line':
@@ -548,21 +505,21 @@ export const PDFEditorCanvas = ({
             strokeWidth: strokeWidth,
             selectable: false,
           });
-          canvas.add(line);
-          canvas.setActiveObject(line);
+          fabricCanvasRef.current.add(line);
+          fabricCanvasRef.current.setActiveObject(line);
           break;
 
         case 'highlight':
           if (highlightMode === 'pen') {
             // Pen mode - enable drawing mode with semi-transparent brush
-            canvas.isDrawingMode = true;
-            canvas.freeDrawingBrush.width = strokeWidth;
+            fabricCanvasRef.current.isDrawingMode = true;
+            fabricCanvasRef.current.freeDrawingBrush.width = strokeWidth;
             // Convert hex color to rgba with 0.4 opacity
             const rgb = parseInt(highlightColor.slice(1), 16);
             const r = (rgb >> 16) & 255;
             const g = (rgb >> 8) & 255;
             const b = rgb & 255;
-            canvas.freeDrawingBrush.color = `rgba(${r}, ${g}, ${b}, 0.4)`;
+            fabricCanvasRef.current.freeDrawingBrush.color = `rgba(${r}, ${g}, ${b}, 0.4)`;
           } else {
             // Rectangle mode - create a semi-transparent rectangle
             const rgb = parseInt(highlightColor.slice(1), 16);
@@ -578,8 +535,8 @@ export const PDFEditorCanvas = ({
               stroke: 'transparent',
               selectable: false,
             });
-            canvas.add(highlight);
-            canvas.setActiveObject(highlight);
+            fabricCanvasRef.current.add(highlight);
+            fabricCanvasRef.current.setActiveObject(highlight);
           }
           break;
 
@@ -608,7 +565,7 @@ export const PDFEditorCanvas = ({
             selectable: false,
           });
           
-          canvas.add(stamp);
+          fabricCanvasRef.current.add(stamp);
           saveState();
           break;
         
@@ -624,9 +581,11 @@ export const PDFEditorCanvas = ({
               reader.onload = (event) => {
                 const imgUrl = event.target?.result as string;
                 fabric.Image.fromURL(imgUrl, (img) => {
+                  if (!fabricCanvasRef.current) return;
+                  
                   // Place image in center of canvas
-                  const canvasWidth = canvas.width || 800;
-                  const canvasHeight = canvas.height || 600;
+                  const canvasWidth = fabricCanvasRef.current.width || 800;
+                  const canvasHeight = fabricCanvasRef.current.height || 600;
                   
                   img.set({
                     left: (canvasWidth - (img.width || 0) * 0.5) / 2,
@@ -638,9 +597,9 @@ export const PDFEditorCanvas = ({
                     selectable: false,
                   });
                   
-                  canvas.add(img);
-                  canvas.setActiveObject(img);
-                  canvas.requestRenderAll();
+                  fabricCanvasRef.current.add(img);
+                  fabricCanvasRef.current.setActiveObject(img);
+                  fabricCanvasRef.current.requestRenderAll();
                   saveState();
                 });
               };
@@ -651,133 +610,27 @@ export const PDFEditorCanvas = ({
           break;
       }
     };
+  }, [activeTool, fontSize, fontFamily, textColor, isBold, isItalic, strokeWidth, strokeColor, fillColor, fillOpacity, highlightColor, highlightMode, stampText, stampColor, saveState, scheduleRender]);
 
-    const handleMouseMove = (e: fabric.IEvent) => {
-      if (!e.pointer) return;
-
-      const pointer = canvas.getPointer(e.e);
-      
-      // Handle eraser - continuously remove objects while dragging
-      if (activeTool === 'eraser' && isDrawing) {
-        const eraserRadius = 10; // Fixed eraser size
-        const objectsToRemove: fabric.Object[] = [];
-        
-        canvas.forEachObject((obj) => {
-          if (obj === canvas.backgroundImage) return;
-          
-          const objBounds = obj.getBoundingRect();
-          if (
-            pointer.x >= objBounds.left - eraserRadius &&
-            pointer.x <= objBounds.left + objBounds.width + eraserRadius &&
-            pointer.y >= objBounds.top - eraserRadius &&
-            pointer.y <= objBounds.top + objBounds.height + eraserRadius
-          ) {
-            objectsToRemove.push(obj);
-          }
-        });
-        
-        if (objectsToRemove.length > 0) {
-          erasedObjectsRef.current = true;
-          objectsToRemove.forEach(obj => canvas.remove(obj));
-          simpleRender();
-        }
-        return;
-      }
-      
-      if (!isDrawing) return;
-
-      const activeObj = canvas.getActiveObject();
-
-      if (!activeObj) return;
-
-      switch (activeTool) {
-        case 'rectangle':
-          if (activeObj instanceof fabric.Rect) {
-            const rect = activeObj as fabric.Rect;
-            const width = pointer.x - (rect.left || 0);
-            const height = pointer.y - (rect.top || 0);
-            rect.set({ width: Math.abs(width), height: Math.abs(height) });
-            if (width < 0) rect.set({ left: pointer.x });
-            if (height < 0) rect.set({ top: pointer.y });
-          }
-          break;
-
-        case 'circle':
-          if (activeObj instanceof fabric.Circle) {
-            const circle = activeObj as fabric.Circle;
-            const dx = pointer.x - (circle.left || 0);
-            const dy = pointer.y - (circle.top || 0);
-            const radius = Math.sqrt(dx * dx + dy * dy);
-            circle.set({ radius });
-          }
-          break;
-
-        case 'line':
-          if (activeObj instanceof fabric.Line) {
-            const line = activeObj as fabric.Line;
-            line.set({ x2: pointer.x, y2: pointer.y });
-          }
-          break;
-
-        case 'highlight':
-          // Only handle rectangle mode here, pen mode uses drawing mode
-          if (highlightMode === 'rectangle' && activeObj instanceof fabric.Rect) {
-            const highlight = activeObj as fabric.Rect;
-            const width = pointer.x - (highlight.left || 0);
-            highlight.set({ width: Math.abs(width) });
-            if (width < 0) highlight.set({ left: pointer.x });
-          }
-          break;
-      }
-
-      simpleRender();
-    };
-
-    const handleMouseUp = () => {
-      if (isDrawing) {
-        setIsDrawing(false);
-        
-        // For eraser, only save if objects were actually removed
-        if (activeTool === 'eraser') {
-          if (erasedObjectsRef.current) {
-            saveState();
-            erasedObjectsRef.current = false;
-          }
-          return;
-        }
-        
-        if (['rectangle', 'circle', 'line', 'highlight'].includes(activeTool)) {
-          saveState();
-        }
-      }
-    };
-
-    const handleObjectAdded = (e: any) => {
-      const obj = e.target;
-      
-      // Make all newly added objects non-selectable by default
-      if (obj) {
-        obj.selectable = false;
-        obj.evented = false;
-      }
-      
-      if (activeTool === 'draw') {
-        saveState();
-      }
-    };
-
-    canvas.on('mouse:down', handleMouseDown);
-    canvas.on('mouse:move', handleMouseMove);
-    canvas.on('mouse:up', handleMouseUp);
-    canvas.on('object:added', handleObjectAdded);
-
+  // BIND ONCE in mount-only effect:
+  useEffect(() => {
+    if (!fabricCanvasRef.current) return;
+    const canvas = fabricCanvasRef.current;
+    
+    const mouseDown = (e: any) => handlersRef.current.mouseDown(e);
+    const mouseMove = (e: any) => handlersRef.current.mouseMove(e);
+    const mouseUp = (e: any) => handlersRef.current.mouseUp(e);
+    
+    canvas.on('mouse:down', mouseDown);
+    canvas.on('mouse:move', mouseMove);
+    canvas.on('mouse:up', mouseUp);
+    
     return () => {
-      canvas.off('mouse:down', handleMouseDown);
-      canvas.off('mouse:move', handleMouseMove);
-      canvas.off('mouse:up', handleMouseUp);
-      canvas.off('object:added', handleObjectAdded);
+      canvas.off('mouse:down', mouseDown);
+      canvas.off('mouse:move', mouseMove);
+      canvas.off('mouse:up', mouseUp);
     };
-  }, [activeTool, isDrawing, fontSize, fontFamily, textColor, isBold, isItalic, strokeWidth, strokeColor, saveState, simpleRender, highlightColor, highlightMode, stampText, stampColor, fillColor, fillOpacity]);
+  }, []); // Empty deps - bind once!
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -893,190 +746,127 @@ export const PDFEditorCanvas = ({
     };
   }, [onObjectSelected]);
 
+  const createMouseMoveHandler = useCallback(() => {
+    return (e: any) => {
+      if (!isDrawing || !fabricCanvasRef.current) return;
+
+      const pointer = fabricCanvasRef.current.getPointer(e.e);
+      const activeObj = fabricCanvasRef.current.getActiveObject();
+      
+      // Handle eraser - remove objects under cursor while dragging
+      if (activeTool === 'eraser') {
+        const eraserRadius = 10;
+        const objectsToRemove: fabric.Object[] = [];
+        
+        fabricCanvasRef.current.forEachObject((obj) => {
+          if (obj === fabricCanvasRef.current?.backgroundImage) return;
+          
+          const objBounds = obj.getBoundingRect();
+          if (
+            pointer.x >= objBounds.left - eraserRadius &&
+            pointer.x <= objBounds.left + objBounds.width + eraserRadius &&
+            pointer.y >= objBounds.top - eraserRadius &&
+            pointer.y <= objBounds.top + objBounds.height + eraserRadius
+          ) {
+            objectsToRemove.push(obj);
+          }
+        });
+        
+        if (objectsToRemove.length > 0) {
+          erasedObjectsRef.current = true;
+          objectsToRemove.forEach(obj => fabricCanvasRef.current?.remove(obj));
+          scheduleRender();
+        }
+        return;
+      }
+
+      if (!activeObj) return;
+
+      switch (activeTool) {
+        case 'rectangle':
+          const rect = activeObj as fabric.Rect;
+          rect.set({
+            width: Math.abs(pointer.x - rect.left!),
+            height: Math.abs(pointer.y - rect.top!),
+          });
+          break;
+
+        case 'circle':
+          const circle = activeObj as fabric.Circle;
+          const radius = Math.sqrt(
+            Math.pow(pointer.x - circle.left!, 2) + Math.pow(pointer.y - circle.top!, 2)
+          );
+          circle.set({ radius });
+          break;
+
+        case 'line':
+          const line = activeObj as fabric.Line;
+          line.set({
+            x2: pointer.x,
+            y2: pointer.y,
+          });
+          break;
+
+        case 'highlight':
+          if (highlightMode === 'rectangle') {
+            const highlight = activeObj as fabric.Rect;
+            highlight.set({
+              width: Math.abs(pointer.x - highlight.left!),
+            });
+          }
+          break;
+      }
+
+      scheduleRender();
+    };
+  }, [isDrawing, activeTool, highlightMode, scheduleRender]);
+
+  const createMouseUpHandler = useCallback(() => {
+    return () => {
+      if (isDrawing) {
+        setIsDrawing(false);
+        
+        // Save state after erasing if any objects were removed
+        if (activeTool === 'eraser' && erasedObjectsRef.current) {
+          saveState();
+        }
+        // Save state after drawing shapes
+        else if (activeTool !== 'select' && activeTool !== 'eraser') {
+          saveState();
+        }
+        
+        // Turn off drawing mode after highlight pen
+        if (activeTool === 'highlight' && highlightMode === 'pen' && fabricCanvasRef.current) {
+          fabricCanvasRef.current.isDrawingMode = false;
+        }
+      }
+    };
+  }, [isDrawing, activeTool, highlightMode, saveState]);
+
+  // UPDATE handlers ref when deps change:
+  useEffect(() => {
+    handlersRef.current.mouseDown = createMouseDownHandler();
+    handlersRef.current.mouseMove = createMouseMoveHandler();
+    handlersRef.current.mouseUp = createMouseUpHandler();
+  }, [activeTool, createMouseDownHandler, createMouseMoveHandler, createMouseUpHandler]);
+
+  // Guideline pool setup
+  const guidelinePoolRef = useRef<{
+    vertical: fabric.Line[],
+    horizontal: fabric.Line[],
+    initialized: boolean
+  }>({ vertical: [], horizontal: [], initialized: false });
+
+  const movingScheduledRef = useRef(false);
+  const aligningLineMargin = 5;
+  const aligningLineColor = 'rgb(0, 255, 0)';
+  const aligningLineWidth = 1;
+
   // Snapping guidelines when moving objects
   useEffect(() => {
     if (!fabricCanvasRef.current) return;
     
     const canvas = fabricCanvasRef.current;
-    
-    const handleObjectMoving = (e: any) => {
-      const activeObject = e.target;
-      if (!activeObject || !canvas) return;
-      
-      clearGuidelines();
-      
-      const canvasWidth = canvas.width || 0;
-      const canvasHeight = canvas.height || 0;
-      const canvasCenterX = canvasWidth / 2;
-      const canvasCenterY = canvasHeight / 2;
-      
-      // Get object bounding box for accurate dimensions
-      const objectBounds = activeObject.getBoundingRect();
-      const objectCenterX = objectBounds.left + objectBounds.width / 2;
-      const objectCenterY = objectBounds.top + objectBounds.height / 2;
-      const objectLeft = objectBounds.left;
-      const objectTop = objectBounds.top;
-      const objectRight = objectBounds.left + objectBounds.width;
-      const objectBottom = objectBounds.top + objectBounds.height;
-      
-      let snapX = null;
-      let snapY = null;
-      
-      // Check vertical center alignment
-      if (Math.abs(objectCenterX - canvasCenterX) < aligningLineMargin) {
-        const line = drawVerticalLine({
-          x: canvasCenterX,
-          y1: 0,
-          y2: canvasHeight,
-        });
-        if (line) verticalLinesRef.current.push(line);
-        snapX = canvasCenterX - objectBounds.width / 2;
-      }
-      
-      // Check horizontal center alignment
-      if (Math.abs(objectCenterY - canvasCenterY) < aligningLineMargin) {
-        const line = drawHorizontalLine({
-          x1: 0,
-          x2: canvasWidth,
-          y: canvasCenterY,
-        });
-        if (line) horizontalLinesRef.current.push(line);
-        snapY = canvasCenterY - objectBounds.height / 2;
-      }
-      
-      // Check left edge alignment (with canvas)
-      if (Math.abs(objectLeft) < aligningLineMargin) {
-        const line = drawVerticalLine({
-          x: 0,
-          y1: 0,
-          y2: canvasHeight,
-        });
-        if (line) verticalLinesRef.current.push(line);
-        snapX = 0;
-      }
-      
-      // Check right edge alignment (with canvas)
-      if (Math.abs(objectRight - canvasWidth) < aligningLineMargin) {
-        const line = drawVerticalLine({
-          x: canvasWidth,
-          y1: 0,
-          y2: canvasHeight,
-        });
-        if (line) verticalLinesRef.current.push(line);
-        snapX = canvasWidth - objectBounds.width;
-      }
-      
-      // Check top edge alignment (with canvas)
-      if (Math.abs(objectTop) < aligningLineMargin) {
-        const line = drawHorizontalLine({
-          x1: 0,
-          x2: canvasWidth,
-          y: 0,
-        });
-        if (line) horizontalLinesRef.current.push(line);
-        snapY = 0;
-      }
-      
-      // Check bottom edge alignment (with canvas)
-      if (Math.abs(objectBottom - canvasHeight) < aligningLineMargin) {
-        const line = drawHorizontalLine({
-          x1: 0,
-          x2: canvasWidth,
-          y: canvasHeight,
-        });
-        if (line) horizontalLinesRef.current.push(line);
-        snapY = canvasHeight - objectBounds.height;
-      }
-      
-      // Check alignment with other objects
-      canvas.forEachObject((obj) => {
-        if (obj === activeObject || obj.selectable === false || obj.evented === false) return;
-        
-        const objBounds = obj.getBoundingRect();
-        const objCenterX = objBounds.left + objBounds.width / 2;
-        const objCenterY = objBounds.top + objBounds.height / 2;
-        const objLeft = objBounds.left;
-        const objTop = objBounds.top;
-        const objRight = objBounds.left + objBounds.width;
-        const objBottom = objBounds.top + objBounds.height;
-        
-        // Vertical center alignment with other objects
-        if (Math.abs(objectCenterX - objCenterX) < aligningLineMargin) {
-          const line = drawVerticalLine({
-            x: objCenterX,
-            y1: Math.min(objectTop, objTop),
-            y2: Math.max(objectBottom, objBottom),
-          });
-          if (line) verticalLinesRef.current.push(line);
-          snapX = objCenterX - objectBounds.width / 2;
-        }
-        
-        // Horizontal center alignment with other objects
-        if (Math.abs(objectCenterY - objCenterY) < aligningLineMargin) {
-          const line = drawHorizontalLine({
-            x1: Math.min(objectLeft, objLeft),
-            x2: Math.max(objectRight, objRight),
-            y: objCenterY,
-          });
-          if (line) horizontalLinesRef.current.push(line);
-          snapY = objCenterY - objectBounds.height / 2;
-        }
-        
-        // Left edge alignment with other objects
-        if (Math.abs(objectLeft - objLeft) < aligningLineMargin) {
-          const line = drawVerticalLine({
-            x: objLeft,
-            y1: Math.min(objectTop, objTop),
-            y2: Math.max(objectBottom, objBottom),
-          });
-          if (line) verticalLinesRef.current.push(line);
-          snapX = objLeft;
-        }
-        
-        // Right edge alignment with other objects
-        if (Math.abs(objectRight - objRight) < aligningLineMargin) {
-          const line = drawVerticalLine({
-            x: objRight,
-            y1: Math.min(objectTop, objTop),
-            y2: Math.max(objectBottom, objBottom),
-          });
-          if (line) verticalLinesRef.current.push(line);
-          snapX = objRight - objectBounds.width;
-        }
-        
-        // Top edge alignment with other objects
-        if (Math.abs(objectTop - objTop) < aligningLineMargin) {
-          const line = drawHorizontalLine({
-            x1: Math.min(objectLeft, objLeft),
-            x2: Math.max(objectRight, objRight),
-            y: objTop,
-          });
-          if (line) horizontalLinesRef.current.push(line);
-          snapY = objTop;
-        }
-        
-        // Bottom edge alignment with other objects
-        if (Math.abs(objectBottom - objBottom) < aligningLineMargin) {
-          const line = drawHorizontalLine({
-            x1: Math.min(objectLeft, objLeft),
-            x2: Math.max(objectRight, objRight),
-            y: objBottom,
-          });
-          if (line) horizontalLinesRef.current.push(line);
-          snapY = objBottom - objectBounds.height;
-        }
-      });
-      
-      // Apply snapping
-      if (snapX !== null) {
-        activeObject.set({ left: snapX });
-      }
-      if (snapY !== null) {
-        activeObject.set({ top: snapY });
-      }
-      
-      activeObject.setCoords();
-    };
     
     const handleObjectModified = () => {
       clearGuidelines();
@@ -1101,24 +891,99 @@ export const PDFEditorCanvas = ({
       }
     };
     
-    canvas.on('object:moving', handleObjectMoving);
+    canvas.on('object:moving', handleSnapping);
     canvas.on('object:modified', handleObjectModified);
     canvas.on('object:scaling', handleObjectScaling);
     canvas.on('mouse:up', clearGuidelines);
     
     return () => {
-      canvas.off('object:moving', handleObjectMoving);
+      canvas.off('object:moving', handleSnapping);
       canvas.off('object:modified', handleObjectModified);
       canvas.off('object:scaling', handleObjectScaling);
       canvas.off('mouse:up', clearGuidelines);
     };
-  }, [clearGuidelines, drawVerticalLine, drawHorizontalLine]);
+  }, [clearGuidelines, handleSnapping]);
+
+  // Add mouse wheel zoom
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only zoom if Ctrl key is pressed (or Cmd on Mac)
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        
+        // Determine zoom direction
+        const delta = e.deltaY > 0 ? -5 : 5;
+        const newZoom = Math.max(10, Math.min(300, zoom + delta));
+        
+        if (onZoomChange) {
+          onZoomChange(newZoom);
+        }
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [zoom, onZoomChange]);
+
+  // Call initialization in Fabric canvas setup
+  useEffect(() => {
+    if (!fabricCanvasRef.current) return;
+
+    const fabricCanvas = fabricCanvasRef.current;
+
+    // Set PDF as background
+    canvasRef.current?.toBlob(async (blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      fabric.Image.fromURL(url, (img) => {
+        img.set({ selectable: false, evented: false });
+        fabricCanvas.setBackgroundImage(img, () => {
+          scheduleRender();
+          URL.revokeObjectURL(url);
+        });
+      }, { crossOrigin: 'anonymous' });
+    }, 'image/png');
+    pdfBackgroundSetRef.current = true;
+
+    // Initialize guideline pool
+    initGuidelinePool();
+  }, [initGuidelinePool, scheduleRender]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup Fabric canvas
+      if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.dispose();
+        fabricCanvasRef.current = null;
+      }
+      
+      // Clear all caches using hooks
+      clearAllCache?.();
+      clearHistory?.();
+    };
+  }, [clearHistory, clearAllCache]);
 
   return (
     <div ref={containerRef} className="relative overflow-auto bg-gray-100 flex items-center justify-center p-4">
       <div className="relative shadow-lg">
         <canvas ref={canvasRef} style={{ display: 'none' }} />
         <canvas id="editor-canvas" />
+        <div 
+          ref={textLayerRef}
+          className="absolute top-0 left-0"
+          style={{
+            pointerEvents: 'none', // Container doesn't capture events, only text spans do
+            userSelect: activeTool === 'select' ? 'text' : 'none',
+            cursor: activeTool === 'select' ? 'text' : 'default',
+          }}
+        />
       </div>
     </div>
   );

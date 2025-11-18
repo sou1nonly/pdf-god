@@ -391,15 +391,16 @@ export const EditorToolbar = ({
                 
                 <Input
                   type="range"
-                  value={fillOpacity}
+                  value={Math.round(fillOpacity) || 50}
                   onChange={(e) => onFillOpacityChange(Number(e.target.value))}
                   className="w-24 h-8"
                   min={0}
                   max={100}
-                  title={`Fill Opacity: ${fillOpacity}%`}
+                  step={1}
+                  title={`Fill Opacity: ${Math.round(fillOpacity) || 50}%`}
                 />
                 
-                <span className="text-xs text-muted-foreground">{fillOpacity}%</span>
+                <span className="text-xs text-muted-foreground">{Math.round(fillOpacity) || 50}%</span>
               </>
             )}
           </>

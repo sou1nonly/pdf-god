@@ -11,7 +11,8 @@ import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftSidebar } from "@/components/layout/LeftSidebar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { TopBar } from "@/components/layout/TopBar";
-import { PDFEditorCanvas } from "@/components/editor/PDFEditorCanvas";
+import { PDFEditorV3 } from "@/components/editor/PDFEditorV3";
+import { EditorModeProvider } from "@/contexts/EditorModeContext";
 import { EditorToolbar, EditorTool } from "@/components/editor/EditorToolbar";
 import { DocumentsList } from "@/components/document/DocumentsList";
 import { toast } from "sonner";
@@ -80,7 +81,9 @@ const EditorPage = () => {
         setFillColor(properties.fill);
       }
       if (properties.opacity !== undefined) {
-        setFillOpacity(properties.opacity);
+        // Convert from 0-1 to 0-100 and ensure it's a valid number
+        const opacityPercent = Math.round(properties.opacity * 100);
+        setFillOpacity(Math.max(0, Math.min(100, opacityPercent)));
       }
       if (properties.stroke) {
         setStrokeColor(properties.stroke);
@@ -281,34 +284,44 @@ const EditorPage = () => {
           totalPages={totalPages}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
+          pdfUrl={pdfUrl}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-auto">
-            {pdfUrl && (
-              <PDFEditorCanvas
-                url={pdfUrl}
-                currentPage={currentPage}
-                zoom={zoom}
-                rotation={rotation}
-                activeTool={activeTool}
-                fontSize={fontSize}
-                fontFamily={fontFamily}
-                textColor={textColor}
-                isBold={isBold}
-                isItalic={isItalic}
-                strokeWidth={strokeWidth}
-                strokeColor={strokeColor}
-                highlightColor={highlightColor}
-                highlightMode={highlightMode}
-                stampText={stampText}
-                stampColor={stampColor}
-                fillColor={fillColor}
-                fillOpacity={fillOpacity}
-                onHistoryChange={handleHistoryChange}
-                onObjectSelected={handleObjectSelected}
-                onPageCountChange={handlePageCountChange}
-              />
+            {pdfUrl ? (
+              <EditorModeProvider>
+                <PDFEditorV3
+                  url={pdfUrl}
+                  currentPage={currentPage}
+                  zoom={zoom}
+                  rotation={rotation}
+                  activeTool={activeTool}
+                  fontSize={fontSize}
+                  fontFamily={fontFamily}
+                  textColor={textColor}
+                  isBold={isBold}
+                  isItalic={isItalic}
+                  strokeWidth={strokeWidth}
+                  strokeColor={strokeColor}
+                  highlightColor={highlightColor}
+                  highlightMode={highlightMode}
+                  stampText={stampText}
+                  stampColor={stampColor}
+                  fillColor={fillColor}
+                  fillOpacity={fillOpacity}
+                  onHistoryChange={(canUndo, canRedo) => {
+                    setCanUndo(canUndo);
+                    setCanRedo(canRedo);
+                  }}
+                  onPageCountChange={setTotalPages}
+                  onZoomChange={setZoom}
+                />
+              </EditorModeProvider>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <p>No document loaded</p>
+              </div>
             )}
           </div>
 
