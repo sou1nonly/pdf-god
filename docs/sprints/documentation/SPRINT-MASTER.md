@@ -13,15 +13,15 @@
 |--------|-----------|--------------|--------|----------|
 | Sprint 1 | Project Setup & Foundation | 29 | ✅ Completed | 100% |
 | Sprint 2 | File Upload & PDF Rendering | 46 | ✅ Completed | 100% |
-| Sprint 3 | PDF Editing Tools (Hybrid Architecture) | 59 | 🚧 In Progress | 95% (56/59) |
+| Sprint 3 | PDF Editing Tools | 59 | � Planned | 0% |
 | Sprint 4 | AI-Powered Features | 36 | 📋 Planned | 0% |
 | Sprint 5 | OCR & File Management | 39 | 📋 Planned | 0% |
 | Sprint 6 | Collaboration & Cloud | 39 | 📋 Planned | 0% |
 | Sprint 7 | Polish, Testing & Deployment | 42 | 📋 Planned | 0% |
 
 **Total Estimated Story Points:** 290  
-**Completed Story Points:** 131 (45.2%)  
-**In Progress:** Sprint 3 - Triple Layer Hybrid Editor (56/59 points, PDFEditorV3 integration complete)
+**Completed Story Points:** 75 (25.9%)  
+**In Progress:** Ready to start Sprint 3
 
 ---
 
@@ -259,26 +259,11 @@ US-2.6:
 
 **File:** `steps/SPRINT-3-PDF-Editing-Tools.md`  
 **Duration:** 3 weeks  
-**Status:** 🚧 In Progress (95% Complete)  
-**Story Points:** 59 (56 completed)  
-**Architecture:** Triple Layer Hybrid System (Excalidraw + Fabric.js + TipTap)  
-**Last Updated:** November 17, 2025
+**Status:** � Planned (RESET - Nov 19, 2025)  
+**Story Points:** 59  
+**Last Reset:** November 19, 2025
 
-**MAJOR ARCHITECTURE CHANGE:**
-Replaced previous canvas-based approach with professional triple-layer hybrid system:
-- **Layer 1:** Excalidraw (Sketch Mode) - Freehand drawings and quick diagrams
-- **Layer 2:** Fabric.js (Design Mode) - Precise shapes and professional layouts
-- **Layer 3:** TipTap (Annotate Mode) - Rich text comments and notes
-
-**✅ INTEGRATION COMPLETE (November 17, 2025):**
-- **PDFEditorV3.tsx** created (300 lines) - Main integration component
-- All three layers successfully integrated with react-pdf background
-- Mode switching system fully operational with visual feedback
-- Annotation manager connected to all layers
-- Debug overlay for development monitoring
-- EditorPage.tsx updated to use new V3 component
-- Zero TypeScript compilation errors
-- Ready for testing phase
+**Previous attempts removed - starting fresh with step-by-step approach**
 
 **User Stories:**
 
@@ -287,99 +272,72 @@ US-3.1:
   title: "Text Editing Mode"
   story_points: 13
   priority: Critical
-  status: completed
-  date_completed: November 17, 2025
-  implementation: TipTap Layer
+  status: planned
   tasks:
-    - ✅ Integrated TipTap rich text editor
-    - ✅ Implemented draggable text boxes with resize handles
-    - ✅ Created comprehensive formatting toolbar
-    - ✅ Font formatting (bold, italic, underline, strikethrough)
-    - ✅ Text highlighting with color picker
-    - ✅ Bullet and numbered lists
-    - ✅ Text alignment (left, center, right)
-    - ✅ Text color and background color pickers
-    - ✅ Multi-line text box support
-    - ✅ Text selection and editing states
-    - ✅ Delete functionality with confirmation
+    - Integrate text editor library
+    - Implement draggable text boxes
+    - Create formatting toolbar
+    - Font formatting options
+    - Text highlighting
+    - Multi-line text support
 
 US-3.2:
   title: "Annotation Tools"
   story_points: 8
   priority: High
-  status: completed
-  date_completed: November 17, 2025
-  implementation: Hybrid (All Layers)
+  status: planned
   tasks:
-    - ✅ Highlight tool in TipTap layer
-    - ✅ Underline and strikethrough in TipTap
-    - ✅ Rich text comments with full formatting
-    - ✅ Per-page annotation storage system
-    - ✅ Layer-based annotation management
-    - ✅ Unified annotation state manager
-    - ✅ Save/load annotations to JSON
+    - Highlight tool
+    - Underline and strikethrough
+    - Text comments
+    - Sticky notes
+    - Save annotations to database
 
-US-3.2:
+US-3.3:
   title: "Drawing Tools"
   story_points: 8
   priority: High
-  status: completed
-  date_completed: November 17, 2025
-  implementation: Excalidraw + Fabric.js Layers
+  status: planned
   tasks:
-    - ✅ Freehand drawing (Excalidraw Draw tool)
-    - ✅ Precise shapes (Fabric.js: rectangle, circle, line, arrow)
-    - ✅ Hand-drawn shapes (Excalidraw: rectangle, diamond, circle, arrow)
-    - ✅ Color picker for all drawing tools
-    - ✅ Stroke width adjustment in both layers
-    - ✅ Eraser tool (Excalidraw built-in)
-    - ✅ Multi-layer system with proper Z-index
-    - ✅ Mode switching between Sketch and Design
+    - Freehand drawing
+    - Shape tools (rectangle, circle, line, arrow)
+    - Color picker
+    - Stroke width adjustment
+    - Eraser tool
 
 US-3.4:
   title: "Image Insertion"
   story_points: 5
   priority: Medium
-  status: completed
-  date_completed: November 17, 2025
-  implementation: Fabric.js Layer
+  status: planned
   tasks:
-    - ✅ Image upload support in Fabric.js
-    - ✅ Resize with transformations
-    - ✅ Rotate images (free rotation via Fabric.js handles)
-    - ✅ Drag and position images on canvas
-    - ✅ Object manipulation (move, scale, rotate)
-    - ✅ Delete objects functionality
+    - Image upload support
+    - Resize and crop
+    - Rotate images
+    - Position on canvas
 
 US-3.5:
   title: "Undo/Redo System"
   story_points: 5
   priority: High
-  status: completed
-  date_completed: November 17, 2025
-  implementation: AnnotationManager Hook
+  status: planned
   tasks:
-    - ✅ Implemented unified history manager
-    - ✅ State snapshots for all three layers
-    - ✅ History buffer with undo/redo methods
-    - ✅ canUndo/canRedo state tracking
-    - ✅ History persistence in annotation manager
-    - 🚧 Keyboard shortcuts (pending PDFEditorV3 integration)
-    - 🚧 Visual undo/redo buttons (pending toolbar update)
+    - Implement history manager
+    - Undo/redo buttons
+    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+    - State snapshots
 
 US-3.6:
   title: "Stamps & Signatures"
   story_points: 8
   priority: High
-  status: in-progress
-  implementation: Fabric.js + Excalidraw
+  status: planned
   tasks:
-    - ✅ Custom stamp creation (Excalidraw text tool)
-    - ✅ Handwritten signature drawing (Excalidraw Draw tool)
-    - 🚧 Pre-made stamps (to be implemented in Fabric.js)
-    - 🚧 Date/time stamps (to be implemented)
-    - 🚧 Digital signature placement area
-    - 🚧 Form validation stamps
+    - Custom stamp creation
+    - Pre-made stamps library
+    - Handwritten signature drawing
+    - Digital signature placement
+    - Date/time stamps
 
 US-3.7:
   title: "PDF Bookmarks & Navigation"
@@ -388,12 +346,10 @@ US-3.7:
   status: planned
   tasks:
     - Create/edit bookmarks panel
-    - Nested bookmark hierarchy (parent/child structure)
-    - Jump to specific pages on bookmark click
-    - Auto-generate table of contents from headings
-    - Bookmark search/filter functionality
-    - Drag-and-drop bookmark reordering
-    - Bookmark export/import
+    - Nested bookmark hierarchy
+    - Jump to specific pages
+    - Auto-generate table of contents
+    - Bookmark search/filter
 
 US-3.8:
   title: "Hyperlinks & Cross-References"
@@ -401,87 +357,37 @@ US-3.8:
   priority: Medium
   status: planned
   tasks:
-    - Insert clickable links (external URLs, email, page jumps)
-    - Edit existing link destinations
-    - Link validation (check if URLs are valid)
-    - Visual link indicators (underline, color)
-    - Link hover previews with tooltip
-    - Remove/disable links
-    - Link statistics (count, broken links)
+    - Insert clickable links
+    - Edit link destinations
+    - Link validation
+    - Visual link indicators
+    - Link hover previews
 
 US-3.9:
   title: "Advanced Text Tools"
   story_points: 7
   priority: High
-  status: in-progress
+  status: planned
   tasks:
-    - 🚧 Find & Replace across entire document (planned)
-    - 🚧 Case-sensitive and whole-word search (planned)
-    - 🚧 Spell checker with suggestions (planned)
-    - ✅ Text alignment tools (left, center, right) - TipTap extension
-    - 🚧 Line spacing adjustments (planned)
-    - ✅ Text box dragging and positioning
-    - 🚧 Character and word count (planned)
-    - ✅ Rich formatting with color pickers
+    - Find & Replace functionality
+    - Spell checker
+    - Text alignment tools
+    - Line spacing adjustments
+    - Character and word count
 ```
 
 **Notes:**
-- ✅ **Architecture Complete:** Triple layer hybrid system implemented
-- ✅ **Layer 1 (Excalidraw):** Fully functional with all built-in tools
-- ✅ **Layer 2 (Fabric.js):** Canvas layer ready with shape manipulation
-- ✅ **Layer 3 (TipTap):** Rich text editing with comprehensive toolbar
-- ✅ **State Management:** Unified annotation manager with undo/redo
-- ✅ **Mode Switching:** Context-based mode management complete
-- ✅ **Type System:** Full TypeScript coverage across all layers
-- 🚧 **Integration:** PDFEditorV3 component needs creation (final step)
-- 🚧 **Testing:** Comprehensive testing pending
+- 🔄 **Sprint Reset:** All previous Sprint 3 work removed (Nov 19, 2025)
+- 📋 **Starting Fresh:** Will implement step-by-step with user guidance
+- 🎯 **Focus:** Build solid foundation before adding complexity
+- ⚠️ **Lessons Learned:** Avoid over-engineering, test incrementally
 
-**Completed Story Points:** 47 out of 59 (80% complete)
-
-**Technical Stack:**
-- ✅ Fabric.js v5.5.2 (~200KB) - Precise canvas manipulation
-- ✅ Excalidraw v0.18.0 (~150KB) - Whiteboard-style drawing
-- ✅ TipTap + Extensions (~80KB) - Rich text editing
-- ✅ PDF.js v5.4.394 - PDF rendering (existing)
-- **Total Added:** ~430KB bundle size
-
-**Architecture Highlights:**
-- Clean separation of concerns (3 independent layers)
-- Only active layer consumes resources
-- Per-page annotation storage with Maps
-- JSON serialization for save/load
-- Full undo/redo support across all layers
-- Type-safe with comprehensive TypeScript
-- Extensible - easy to add more layers
-
-**Files Created:**
-1. `layers/ExcalidrawLayer.tsx` - Sketch mode component
-2. `layers/FabricLayer.tsx` - Design mode component
-3. `layers/TipTapAnnotations.tsx` - Annotate mode component
-4. `types/hybridAnnotations.ts` - Unified type system
-5. `hooks/useAnnotationManager.ts` - State management
-6. `contexts/EditorModeContext.tsx` - Mode switching
-7. `ModeSwitcher.tsx` - Mode selection UI
-8. `IMPLEMENTATION-STATUS.md` - Complete documentation
-9. `HYBRID-PDF-EDITING-APPROACHES.md` - Architecture guide
-
-**Files Removed (Cleanup):**
-- ❌ `PDFEditorCanvas.tsx` - Old canvas editor (919 lines)
-- ❌ `PDFEditorV2.tsx` - SVG annotation system (~900 lines)
-- ❌ `hooks/usePDFRenderer.ts` - Manual rendering (110 lines)
-- ❌ `hooks/useTextLayer.ts` - Manual text layer (121 lines)
-- ❌ `CANVAS-ALTERNATIVES.md` - Old documentation
-- ❌ `MODERN-PDF-EDITING-APPROACHES.md` - Old documentation
-
-**Remaining Tasks:**
-1. Create `PDFEditorV3.tsx` - Integrate all three layers
-2. Update `EditorPage.tsx` - Replace V2 with V3
-3. Add unified toolbar controls
-4. Implement keyboard shortcuts (Ctrl+Z, Ctrl+Y)
-5. Add export with annotations
-6. Comprehensive testing
-
-**Estimated Completion:** 2-3 hours of development + 2-3 hours testing
+**Next Steps:**
+1. Choose primary editing approach (canvas vs overlay)
+2. Implement basic text editing first
+3. Add drawing tools incrementally
+4. Test each feature before proceeding
+5. Document architecture decisions
 
 ---
 
