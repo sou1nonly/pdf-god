@@ -3,7 +3,7 @@
 **Project:** UniPDF Studio  
 **Total Sprints:** 7  
 **Project Duration:** 14 weeks  
-**Last Updated:** November 7, 2025
+**Last Updated:** November 17, 2025
 
 ---
 
@@ -20,7 +20,8 @@
 | Sprint 7 | Polish, Testing & Deployment | 42 | 📋 Planned | 0% |
 
 **Total Estimated Story Points:** 290  
-**Completed Story Points:** 75 (25.9%)
+**Completed Story Points:** 75 (25.9%)  
+**In Progress:** Ready to start Sprint 3
 
 ---
 
@@ -237,14 +238,32 @@ US-2.6:
 - ✅ Enhanced database schema with file_type and storage_path columns
 - 📝 Word document conversion (.doc, .docx) requires backend service (deferred)
 
+**Code Refactoring (November 13, 2025):**
+- ✅ Refactored PDFEditorCanvas.tsx from 1,277 lines to 919 lines (28% reduction)
+- ✅ Created 6 custom React hooks for separation of concerns:
+  - `useCanvasScheduler.ts` - RAF render batching (40 lines)
+  - `useCanvasHistory.ts` - Undo/redo with differential storage (140 lines)
+  - `usePDFRenderer.ts` - PDF loading & rendering (110 lines)
+  - `useTextLayer.ts` - Text layer caching (130 lines)
+  - `useSnappingGuidelines.ts` - Guideline pooling (150 lines)
+  - `usePerformanceMetrics.ts` - Performance tracking (60 lines)
+- ✅ Created utilities: `logger.ts`, `blobConverter.ts`
+- ✅ Created shared types: `editorTypes.ts`
+- ✅ Added comprehensive logging throughout all operations
+- ✅ Zero TypeScript compilation errors
+- ✅ Build successful with improved maintainability
+
 ---
 
 ### SPRINT 3: PDF Editing Tools
 
 **File:** `steps/SPRINT-3-PDF-Editing-Tools.md`  
 **Duration:** 3 weeks  
-**Status:** Planned  
-**Story Points:** 59
+**Status:** � Planned (RESET - Nov 19, 2025)  
+**Story Points:** 59  
+**Last Reset:** November 19, 2025
+
+**Previous attempts removed - starting fresh with step-by-step approach**
 
 **User Stories:**
 
@@ -255,12 +274,12 @@ US-3.1:
   priority: Critical
   status: planned
   tasks:
-    - Integrate Fabric.js for canvas manipulation
-    - Implement text selection and editing
-    - Create font formatting toolbar (family, size, color, bold, italic)
-    - Add text alignment controls
-    - Save text changes to PDF
-    - Handle multi-line text boxes
+    - Integrate text editor library
+    - Implement draggable text boxes
+    - Create formatting toolbar
+    - Font formatting options
+    - Text highlighting
+    - Multi-line text support
 
 US-3.2:
   title: "Annotation Tools"
@@ -268,12 +287,11 @@ US-3.2:
   priority: High
   status: planned
   tasks:
-    - Highlight tool with color picker (yellow, green, blue, pink)
-    - Underline and strikethrough tools
-    - Sticky note comments with user attribution
-    - Annotation layer management
-    - Toggle annotation visibility
-    - Export annotations separately
+    - Highlight tool
+    - Underline and strikethrough
+    - Text comments
+    - Sticky notes
+    - Save annotations to database
 
 US-3.3:
   title: "Drawing Tools"
@@ -281,12 +299,11 @@ US-3.3:
   priority: High
   status: planned
   tasks:
-    - Freehand drawing with pen tool
-    - Shape tools (rectangle, circle, arrow, line)
-    - Color picker for drawings
+    - Freehand drawing
+    - Shape tools (rectangle, circle, line, arrow)
+    - Color picker
     - Stroke width adjustment
-    - Eraser tool with size options
-    - Drawing layer system with Z-index control
+    - Eraser tool
 
 US-3.4:
   title: "Image Insertion"
@@ -294,12 +311,10 @@ US-3.4:
   priority: Medium
   status: planned
   tasks:
-    - Image upload for insertion (drag-and-drop)
-    - Resize images with aspect ratio lock
-    - Rotate images (free rotation and 90° increments)
-    - Position images anywhere on PDF page
-    - Image opacity control
-    - Delete inserted images
+    - Image upload support
+    - Resize and crop
+    - Rotate images
+    - Position on canvas
 
 US-3.5:
   title: "Undo/Redo System"
@@ -307,12 +322,10 @@ US-3.5:
   priority: High
   status: planned
   tasks:
-    - Implement history manager with state snapshots
-    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y / Cmd+Z, Cmd+Shift+Z)
-    - 50-step history buffer
-    - Visual undo/redo buttons in toolbar
-    - Clear history on document save
-    - History persistence across sessions
+    - Implement history manager
+    - Undo/redo buttons
+    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+    - State snapshots
 
 US-3.6:
   title: "Stamps & Signatures"
@@ -320,13 +333,11 @@ US-3.6:
   priority: High
   status: planned
   tasks:
-    - Pre-made stamps (Approved, Rejected, Confidential, Draft, Final, Copy)
-    - Custom stamp creation with text input
-    - Date/time stamps (auto-updating and static)
-    - Digital signature placement area
-    - Handwritten signature drawing with smooth curves
-    - Form validation stamps (✓, ✗)
-    - Stamp rotation and resizing
+    - Custom stamp creation
+    - Pre-made stamps library
+    - Handwritten signature drawing
+    - Digital signature placement
+    - Date/time stamps
 
 US-3.7:
   title: "PDF Bookmarks & Navigation"
@@ -335,12 +346,10 @@ US-3.7:
   status: planned
   tasks:
     - Create/edit bookmarks panel
-    - Nested bookmark hierarchy (parent/child structure)
-    - Jump to specific pages on bookmark click
-    - Auto-generate table of contents from headings
-    - Bookmark search/filter functionality
-    - Drag-and-drop bookmark reordering
-    - Bookmark export/import
+    - Nested bookmark hierarchy
+    - Jump to specific pages
+    - Auto-generate table of contents
+    - Bookmark search/filter
 
 US-3.8:
   title: "Hyperlinks & Cross-References"
@@ -348,13 +357,11 @@ US-3.8:
   priority: Medium
   status: planned
   tasks:
-    - Insert clickable links (external URLs, email, page jumps)
-    - Edit existing link destinations
-    - Link validation (check if URLs are valid)
-    - Visual link indicators (underline, color)
-    - Link hover previews with tooltip
-    - Remove/disable links
-    - Link statistics (count, broken links)
+    - Insert clickable links
+    - Edit link destinations
+    - Link validation
+    - Visual link indicators
+    - Link hover previews
 
 US-3.9:
   title: "Advanced Text Tools"
@@ -362,34 +369,25 @@ US-3.9:
   priority: High
   status: planned
   tasks:
-    - Find & Replace across entire document
-    - Case-sensitive and whole-word search
-    - Spell checker with suggestions
-    - Text alignment tools (left, center, right, justify)
-    - Line spacing adjustments (1.0x, 1.5x, 2.0x, custom)
-    - Text box rotation (free and fixed angles)
+    - Find & Replace functionality
+    - Spell checker
+    - Text alignment tools
+    - Line spacing adjustments
     - Character and word count
-    - Text styling presets
 ```
 
 **Notes:**
-- Fabric.js provides excellent canvas manipulation for all editing tools
-- Performance critical for smooth editing experience
-- Undo/redo essential for good user experience
-- Stamps and signatures add professional document workflow support
-- Bookmarks improve navigation for large documents
-- Hyperlinks enable interactive PDFs
-- Advanced text tools match commercial PDF editors
-- All tools should work seamlessly together
-- Layer management crucial for complex edits
+- 🔄 **Sprint Reset:** All previous Sprint 3 work removed (Nov 19, 2025)
+- 📋 **Starting Fresh:** Will implement step-by-step with user guidance
+- 🎯 **Focus:** Build solid foundation before adding complexity
+- ⚠️ **Lessons Learned:** Avoid over-engineering, test incrementally
 
-**Technical Requirements:**
-- Fabric.js v5.x for canvas manipulation
-- PDF-lib for PDF modification and saving
-- Canvas rendering optimization for large documents
-- State management for undo/redo across all tools
-- Keyboard shortcut system
-- Touch and stylus support for drawing/signatures
+**Next Steps:**
+1. Choose primary editing approach (canvas vs overlay)
+2. Implement basic text editing first
+3. Add drawing tools incrementally
+4. Test each feature before proceeding
+5. Document architecture decisions
 
 ---
 

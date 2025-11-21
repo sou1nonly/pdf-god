@@ -179,4 +179,15 @@ All colors MUST be HSL.
   .animate-fade-in {
     animation: fade-in 0.2s ease-out;
   }
+
+  /* PDF Text Selection Styling */
+  ::selection {
+    background-color: rgba(59, 130, 246, 0.3); /* Blue with 30% opacity */
+    color: inherit;
+  }
+
+  ::-moz-selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: inherit;
+  }
 }

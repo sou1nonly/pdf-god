@@ -3,6 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Configure PDF.js worker - use CDN for reliability
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 interface LeftSidebarProps {
   isOpen: boolean;
@@ -10,9 +15,54 @@ interface LeftSidebarProps {
   totalPages?: number;
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  pdfUrl?: string;
 }
 
-export const LeftSidebar = ({ isOpen, onToggle, totalPages = 1, currentPage = 1, onPageChange }: LeftSidebarProps) => {
+export const LeftSidebar = ({ isOpen, onToggle, totalPages = 1, currentPage = 1, onPageChange, pdfUrl }: LeftSidebarProps) => {
+  const [thumbnails, setThumbnails] = useState<{ [key: number]: string }>({});
+
+  useEffect(() => {
+    if (!pdfUrl || !isOpen) return;
+
+    const loadThumbnails = async () => {
+      try {
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        const pdf = await loadingTask.promise;
+        
+        const thumbs: { [key: number]: string } = {};
+        
+        // Generate thumbnails for all pages
+        for (let pageNum = 1; pageNum <= Math.min(totalPages, pdf.numPages); pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          
+          // Create a smaller viewport for thumbnail
+          const viewport = page.getViewport({ scale: 0.4 });
+          
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          if (!context) continue;
+          
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          
+          await page.render({
+            canvas,
+            canvasContext: context,
+            viewport,
+          }).promise;
+          
+          thumbs[pageNum] = canvas.toDataURL();
+        }
+        
+        setThumbnails(thumbs);
+      } catch (error) {
+        console.error('Error loading thumbnails:', error);
+      }
+    };
+
+    loadThumbnails();
+  }, [pdfUrl, totalPages, isOpen]);
+
   if (!isOpen) {
     return (
       <div className="w-12 border-r bg-card flex flex-col items-center py-2">
@@ -65,18 +115,28 @@ export const LeftSidebar = ({ isOpen, onToggle, totalPages = 1, currentPage = 1,
                 key={pageNum}
                 onClick={() => onPageChange?.(pageNum)}
                 className={cn(
-                  "aspect-[8.5/11] bg-muted rounded cursor-pointer transition-smooth hover:bg-muted/70 flex flex-col items-center justify-center p-2",
-                  pageNum === currentPage ? "border-2 border-primary" : "border"
+                  "relative rounded cursor-pointer transition-smooth hover:opacity-80",
+                  pageNum === currentPage ? "ring-2 ring-primary" : "ring-1 ring-border"
                 )}
               >
-                <span className={cn(
-                  "text-xs font-medium",
-                  pageNum === currentPage ? "" : "text-muted-foreground"
+                {thumbnails[pageNum] ? (
+                  <img
+                    src={thumbnails[pageNum]}
+                    alt={`Page ${pageNum}`}
+                    className="w-full h-auto rounded"
+                  />
+                ) : (
+                  <div className="aspect-[8.5/11] bg-muted rounded flex items-center justify-center">
+                    <span className="text-xs text-muted-foreground">Loading...</span>
+                  </div>
+                )}
+                <div className={cn(
+                  "absolute bottom-1 right-1 px-2 py-0.5 rounded text-xs font-medium",
+                  pageNum === currentPage 
+                    ? "bg-primary text-primary-foreground" 
+                    : "bg-background/80 text-muted-foreground"
                 )}>
-                  Page {pageNum}
-                </span>
-                <div className="flex-1 w-full bg-background/50 rounded mt-1 flex items-center justify-center">
-                  <span className="text-2xl font-bold text-muted-foreground/30">{pageNum}</span>
+                  {pageNum}
                 </div>
               </div>
             ))}
