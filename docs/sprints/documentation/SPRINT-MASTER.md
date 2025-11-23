@@ -775,7 +775,7 @@ US-7.5:
 ### Critical Dependencies
 - OpenAI API key (Sprint 4)
 - Google Cloud credentials (Sprint 5, 6)
-- Firebase setup (Sprint 2, 6)
+ - Supabase setup (Sprint 2, 6)
 - Production server access (Sprint 7)
 
 ---
@@ -785,8 +785,6 @@ US-7.5:
 - **Sprint Files:** `documentation/steps/`
 - **Changelog:** `documentation/SPRINT-CHANGELOG.md`
 - **Project Setup:** `README.md`
-- **API Docs:** `documentation/API.md`
-- **Deployment Guide:** `documentation/DEPLOYMENT.md`
 
 ---
 
@@ -798,14 +796,8 @@ US-7.5:
 # Sync all sprint files with this master file
 npm run sync-sprints
 
-# Generate changelog
-npm run generate-changelog
-
 # View sprint status
 npm run sprint-status
-
-# Export to PDF
-npm run export-sprints
 
 # Validate sprint data
 npm run validate-sprints
