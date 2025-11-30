@@ -1,188 +1,152 @@
 import { 
-  MousePointer2, 
-  Type, 
-  Pen, 
-  Square, 
-  Circle, 
-  Image as ImageIcon,
-  CheckSquare,
-  Highlighter,
-  Underline,
-  MessageSquare,
-  FilePlus,
-  Trash2,
+  ChevronLeft,
+  ChevronRight,
   RotateCw,
-  ArrowUpDown,
-  Sparkles,
-  Bot,
-  FileEdit
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+
+const AnySlider = Slider as unknown as React.ComponentType<any>;
+
+// Cast icons to fix TS version mismatch
+const icons = {
+  ChevronLeft: ChevronLeft as any,
+  ChevronRight: ChevronRight as any,
+  RotateCw: RotateCw as any,
+  Undo2: Undo2 as any,
+  Redo2: Redo2 as any,
+};
 
 interface ToolbarProps {
-  activeTool?: string;
-  onToolChange?: (tool: string) => void;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  onRotate: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  viewMode?: 'preview' | 'edit';
 }
 
-interface ToolButtonProps {
-  icon: React.ReactNode;
-  label: string;
-  onClick?: () => void;
-  active?: boolean;
-}
-
-const ToolButton = ({ icon, label, onClick, active }: ToolButtonProps) => (
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant={active ? "default" : "ghost"}
-          size="icon"
-          onClick={onClick}
-          className="h-9 w-9"
-        >
-          {icon}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{label}</p>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-);
-
-export const Toolbar = ({ activeTool = 'select', onToolChange }: ToolbarProps) => {
-  const handleToolClick = (tool: string, label: string) => {
-    onToolChange?.(tool);
-    toast.success(`${label} tool activated`);
+export const Toolbar = ({ 
+  zoom,
+  onZoomChange,
+  currentPage,
+  totalPages,
+  onPageChange,
+  onRotate,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
+  viewMode = 'preview',
+}: ToolbarProps) => {
+  const handlePageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const input = e.currentTarget.elements.namedItem('page') as HTMLInputElement;
+    const page = parseInt(input.value);
+    if (page >= 1 && page <= totalPages) {
+      onPageChange(page);
+    }
   };
 
   return (
-    <div className="h-14 border-b bg-card flex items-center px-2 md:px-4 gap-1 md:gap-2 shrink-0 overflow-x-auto">
+    <div className="h-12 border-b bg-card flex items-center px-3 gap-2 shrink-0">
+      {/* Undo/Redo - Left side */}
       <div className="flex items-center gap-1">
-        <span className="hidden lg:inline text-xs font-medium text-muted-foreground mr-2">Edit</span>
-        <ToolButton 
-          icon={<MousePointer2 className="h-4 w-4" />} 
-          label="Select" 
-          active={activeTool === 'select'}
-          onClick={() => handleToolClick('select', 'Select')}
-        />
-        <ToolButton 
-          icon={<Type className="h-4 w-4" />} 
-          label="Text"
-          active={activeTool === 'text'}
-          onClick={() => handleToolClick('text', 'Text')}
-        />
-        <ToolButton 
-          icon={<Pen className="h-4 w-4" />} 
-          label="Draw"
-          active={activeTool === 'draw'}
-          onClick={() => handleToolClick('draw', 'Draw')}
-        />
-        <ToolButton 
-          icon={<Square className="h-4 w-4" />} 
-          label="Rectangle"
-          active={activeTool === 'rectangle'}
-          onClick={() => handleToolClick('rectangle', 'Rectangle')}
-        />
-        <ToolButton 
-          icon={<Circle className="h-4 w-4" />} 
-          label="Circle"
-          active={activeTool === 'circle'}
-          onClick={() => handleToolClick('circle', 'Circle')}
-        />
-        <ToolButton 
-          icon={<ImageIcon className="h-4 w-4" />} 
-          label="Image"
-          active={activeTool === 'image'}
-          onClick={() => handleToolClick('image', 'Image')}
-        />
-        <ToolButton 
-          icon={<CheckSquare className="h-4 w-4" />} 
-          label="Forms"
-          active={activeTool === 'forms'}
-          onClick={() => handleToolClick('forms', 'Forms')}
-        />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onUndo}
+          disabled={!canUndo}
+          className="h-8 w-8"
+          title="Undo (Ctrl+Z)"
+        >
+          <icons.Undo2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRedo}
+          disabled={!canRedo}
+          className="h-8 w-8"
+          title="Redo (Ctrl+Y)"
+        >
+          <icons.Redo2 className="h-4 w-4" />
+        </Button>
       </div>
 
-      <Separator orientation="vertical" className="h-8" />
+      <div className="w-px h-6 bg-border" />
 
+      {/* Page Navigation */}
       <div className="flex items-center gap-1">
-        <span className="hidden lg:inline text-xs font-medium text-muted-foreground mr-2">Annotate</span>
-        <ToolButton 
-          icon={<Highlighter className="h-4 w-4" />} 
-          label="Highlight"
-          active={activeTool === 'highlight'}
-          onClick={() => handleToolClick('highlight', 'Highlight')}
-        />
-        <ToolButton 
-          icon={<Underline className="h-4 w-4" />} 
-          label="Underline"
-          active={activeTool === 'underline'}
-          onClick={() => handleToolClick('underline', 'Underline')}
-        />
-        <ToolButton 
-          icon={<MessageSquare className="h-4 w-4" />} 
-          label="Comment"
-          active={activeTool === 'comment'}
-          onClick={() => handleToolClick('comment', 'Comment')}
-        />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage <= 1}
+          className="h-8 w-8"
+          title="Previous Page"
+        >
+          <icons.ChevronLeft className="h-4 w-4" />
+        </Button>
+        <form onSubmit={handlePageSubmit} className="flex items-center gap-1">
+          <Input 
+            name="page"
+            className="w-10 h-7 text-center p-0 text-sm" 
+            defaultValue={currentPage}
+            key={currentPage} 
+          />
+          <span className="text-xs text-muted-foreground">/ {totalPages}</span>
+        </form>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage >= totalPages}
+          className="h-8 w-8"
+          title="Next Page"
+        >
+          <icons.ChevronRight className="h-4 w-4" />
+        </Button>
       </div>
 
-      <Separator orientation="vertical" className="h-8 hidden md:block" />
+      {/* Zoom Slider - Only show in edit mode */}
+      {viewMode === 'edit' && (
+        <>
+          <div className="w-px h-6 bg-border" />
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground w-8">{zoom}%</span>
+            <AnySlider
+              value={[zoom]}
+              onValueChange={([val]: number[]) => onZoomChange(val)}
+              min={25}
+              max={300}
+              step={5}
+              className="w-32"
+            />
+          </div>
+        </>
+      )}
 
-      <div className="hidden md:flex items-center gap-1">
-        <span className="hidden lg:inline text-xs font-medium text-muted-foreground mr-2">Pages</span>
-        <ToolButton 
-          icon={<FilePlus className="h-4 w-4" />} 
-          label="Add Page"
-          onClick={() => toast.success('Add page - Coming soon!')}
-        />
-        <ToolButton 
-          icon={<Trash2 className="h-4 w-4" />} 
-          label="Delete Page"
-          onClick={() => toast.success('Delete page - Coming soon!')}
-        />
-        <ToolButton 
-          icon={<RotateCw className="h-4 w-4" />} 
-          label="Rotate"
-          onClick={() => toast.success('Rotate page - Coming soon!')}
-        />
-        <ToolButton 
-          icon={<ArrowUpDown className="h-4 w-4" />} 
-          label="Reorder"
-          onClick={() => toast.success('Reorder pages - Coming soon!')}
-        />
-      </div>
+      <div className="w-px h-6 bg-border" />
 
-      <Separator orientation="vertical" className="h-8 hidden lg:block" />
-
-      <div className="hidden lg:flex items-center gap-1">
-        <span className="hidden lg:inline text-xs font-medium text-muted-foreground mr-2">AI</span>
-        <ToolButton 
-          icon={<Sparkles className="h-4 w-4" />} 
-          label="Summarize"
-          onClick={() => toast.success('AI Summarize - Coming soon!')}
-        />
-        <ToolButton 
-          icon={<Bot className="h-4 w-4" />} 
-          label="Chat"
-          onClick={() => toast.success('AI Chat - Coming soon!')}
-        />
-        <ToolButton 
-          icon={<FileEdit className="h-4 w-4" />} 
-          label="Rewrite"
-          onClick={() => toast.success('AI Rewrite - Coming soon!')}
-        />
-      </div>
+      {/* Rotate */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onRotate}
+        className="h-8 w-8"
+        title="Rotate Page"
+      >
+        <icons.RotateCw className="h-4 w-4" />
+      </Button>
     </div>
   );
 };

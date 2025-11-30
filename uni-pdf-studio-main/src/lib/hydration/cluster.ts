@@ -1,797 +1,732 @@
-import { TextBlock, TextLine, TextParagraph, TextRunRaw, ImageBlock, TableBlock, TableRow, TableCell } from "@/types/hydration";
+import { TextBlock, TextRunRaw, TableBlock, TableRow } from "@/types/hydration";
 
-// Constants for heuristics (Defaults)
-const DEFAULT_Y_TOLERANCE = 4; 
-const DEFAULT_COL_GAP_THRESHOLD = 20; 
-const DEFAULT_X_ALIGN_TOLERANCE = 10; 
-const DEFAULT_PARAGRAPH_BREAK_RATIO = 1.8; 
-const DEFAULT_TABLE_ROW_GAP_THRESHOLD = 10; 
-
-export interface PageStats {
-  dominantFontSize: number;
-  dominantLineHeight: number;
-  fontGroups: Map<string, number>; // Font signature -> count
+// --- Types ---
+export interface Separator {
+  type: 'line' | 'rect';
+  box: [number, number, number, number];
+  orientation: 'horizontal' | 'vertical';
 }
 
-export function analyzeFontStatistics(runs: TextRunRaw[]): PageStats {
-  if (runs.length === 0) {
-    return {
-      dominantFontSize: 12,
-      dominantLineHeight: 14,
-      fontGroups: new Map()
-    };
-  }
-
-  const fontSizeCounts = new Map<number, number>();
-  const fontGroups = new Map<string, number>();
-  
-  runs.forEach(run => {
-    // Round font size to nearest 0.5 to group similar sizes
-    const size = Math.round(run.fontSize * 2) / 2;
-    fontSizeCounts.set(size, (fontSizeCounts.get(size) || 0) + run.str.length); // Weight by text length
-    
-    const fontSig = `${run.fontName}-${size}`;
-    fontGroups.set(fontSig, (fontGroups.get(fontSig) || 0) + 1);
-  });
-
-  // Find dominant font size
-  let dominantFontSize = 12;
-  let maxCount = 0;
-  fontSizeCounts.forEach((count, size) => {
-    if (count > maxCount) {
-      maxCount = count;
-      dominantFontSize = size;
-    }
-  });
-
-  // Estimate line height
-  // We need sorted runs to find vertical gaps
-  const sortedRuns = [...runs].sort((a, b) => a.y - b.y);
-  const gapCounts = new Map<number, number>();
-  
-  for (let i = 1; i < sortedRuns.length; i++) {
-    const gap = sortedRuns[i].y - sortedRuns[i-1].y;
-    if (gap > 0 && gap < dominantFontSize * 3) { // Filter out large gaps (paragraphs/sections)
-      const roundedGap = Math.round(gap);
-      gapCounts.set(roundedGap, (gapCounts.get(roundedGap) || 0) + 1);
-    }
-  }
-  
-  let dominantLineHeight = dominantFontSize * 1.2; // Default fallback
-  let maxGapCount = 0;
-  gapCounts.forEach((count, gap) => {
-    if (count > maxGapCount) {
-      maxGapCount = count;
-      dominantLineHeight = gap;
-    }
-  });
-
-  return {
-    dominantFontSize,
-    dominantLineHeight,
-    fontGroups
+export interface GlobalStats {
+  dominantFontSize: number;
+  dominantLineHeight: number;
+  averageCharWidth: number;
+  masterGrid: {
+    columns: number[];
+    margins: { left: number; right: number; top: number; bottom: number };
+  };
+  typography: {
+    h1: number;
+    h2: number;
+    body: number;
   };
 }
 
-/**
- * Normalize raw PDF.js items into a consistent coordinate system
-
-/**
- * Normalize raw PDF.js items into a consistent coordinate system
- * PDF.js uses bottom-left origin, we want top-left for easier UI mapping
- */
-export function normalizeTextItemsToRuns(items: any[], viewport: any): TextRunRaw[] {
-  return items.map(item => {
-    // item.transform is [scaleX, skewY, skewX, scaleY, translateX, translateY]
-    const tx = item.transform;
-    
-    // Calculate rotation from transform matrix
-    // rotation = atan2(skewY, scaleX) * (180/PI)
-    const rotationRad = Math.atan2(tx[1], tx[0]);
-    const rotationDeg = (rotationRad * 180) / Math.PI;
-
-    // Get font size from transform (approximate height)
-    // scaleY is usually the font size in PDF units
-    const fontSize = Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]);
-
-    // Normalize coordinates to top-left origin
-    // PDF.js viewport.convertToViewportPoint handles the transform
-    // But raw item.transform[4], item.transform[5] are in PDF user space (bottom-left)
-    
-    // Let's use the viewport to project to standard pixel coordinates
-    // Note: item.width/height are already scaled if we use viewport.width/height?
-    // Actually item.width is in PDF units.
-    
-    // Simple approach: use the transform directly but flip Y
-    // x = tx[4], y = viewport.height - tx[5] (roughly)
-    // Better: use the viewport projection if available, but here we are in a worker/pure function
-    // We'll assume viewport.height is available.
-    
-    const x = tx[4];
-    const y = viewport.height - tx[5]; // Flip Y to top-left origin
-
-    return {
-      str: item.str,
-      x,
-      y, // Top-left based Y (approximate baseline)
-      width: item.width,
-      height: item.height || fontSize, // Fallback if height missing
-      fontSize,
-      fontName: item.fontName,
-      dir: item.dir,
-      rotation: rotationDeg,
-      transform: tx,
-      color: '#000000' // Default, as color extraction is complex in PDF.js textContent
-    };
-  });
+// --- Text Line Representation ---
+interface TextLine {
+  runs: TextRunRaw[];
+  y: number;          // Average Y position
+  minX: number;
+  maxX: number;
+  height: number;
+  text: string;
+  fontSize: number;
+  indent: number;     // Left indentation relative to page margin
 }
 
-/**
- * Step 1: Group runs into lines based on Y-coordinate
- */
-export function groupRunsIntoLines(runs: TextRunRaw[], stats?: PageStats): TextLine[] {
-  const yTolerance = stats ? stats.dominantFontSize * 0.5 : DEFAULT_Y_TOLERANCE;
+// --- Paragraph Representation ---
+interface Paragraph {
+  lines: TextLine[];
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  fontSize: number;
+  isHeader: boolean;
+  isListItem: boolean;
+}
 
-  // Sort by Y (top to bottom), then X (left to right)
-  const sorted = [...runs].sort((a, b) => {
-    if (Math.abs(a.y - b.y) <= yTolerance) {
-      return a.x - b.x;
-    }
-    return a.y - b.y;
+// =============================================================================
+// 1. GLOBAL STATISTICS ANALYSIS
+// =============================================================================
+
+export function calculateGlobalStats(allPagesRuns: TextRunRaw[][]): GlobalStats {
+  const allRuns = allPagesRuns.flat();
+  if (allRuns.length === 0) {
+    return {
+      dominantFontSize: 12,
+      dominantLineHeight: 16,
+      averageCharWidth: 6,
+      masterGrid: { columns: [], margins: { left: 50, right: 550, top: 50, bottom: 750 } },
+      typography: { h1: 24, h2: 18, body: 12 }
+    };
+  }
+
+  // Font Size Histogram (weighted by text length)
+  const sizeCounts = new Map<number, number>();
+  let totalChars = 0;
+  let totalWidth = 0;
+  
+  allRuns.forEach(r => {
+    const s = Math.round(r.fontSize);
+    const charCount = r.str.length;
+    sizeCounts.set(s, (sizeCounts.get(s) || 0) + charCount);
+    totalChars += charCount;
+    totalWidth += r.width;
   });
 
-  const lines: TextLine[] = [];
-  let currentLine: TextRunRaw[] = [];
-  let currentY: number | null = null;
+  // Find dominant (body) font size
+  let bodySize = 12;
+  let maxCount = 0;
+  sizeCounts.forEach((count, size) => {
+    if (count > maxCount) {
+      maxCount = count;
+      bodySize = size;
+    }
+  });
 
-  for (const run of sorted) {
-    // Skip empty strings
-    if (!run.str.trim()) continue;
+  // Calculate typography scale
+  const sizes = Array.from(sizeCounts.keys()).sort((a, b) => b - a);
+  const h1 = sizes.find(s => s >= bodySize * 1.5) || bodySize * 2;
+  const h2 = sizes.find(s => s >= bodySize * 1.2 && s < h1) || bodySize * 1.4;
 
-    if (currentY === null) {
-      currentLine = [run];
-      currentY = run.y;
-    } else if (Math.abs(run.y - currentY) <= yTolerance) {
-      currentLine.push(run);
+  // Calculate average character width
+  const avgCharWidth = totalChars > 0 ? totalWidth / totalChars : bodySize * 0.5;
+
+  // Detect page margins by analyzing X positions
+  const leftEdges: number[] = [];
+  const rightEdges: number[] = [];
+  
+  allRuns.forEach(r => {
+    leftEdges.push(r.x);
+    rightEdges.push(r.x + r.width);
+  });
+  
+  leftEdges.sort((a, b) => a - b);
+  rightEdges.sort((a, b) => b - a);
+  
+  // Use 5th percentile for margins to handle outliers
+  const marginLeft = leftEdges[Math.floor(leftEdges.length * 0.05)] || 50;
+  const marginRight = rightEdges[Math.floor(rightEdges.length * 0.05)] || 550;
+
+  // Detect column X positions (significant left-edge alignments)
+  const xHist = new Map<number, number>();
+  allRuns.forEach(r => {
+    const x = Math.round(r.x / 5) * 5; // Quantize to 5pt grid
+    xHist.set(x, (xHist.get(x) || 0) + 1);
+  });
+
+  const columns: number[] = [];
+  const minFreq = allRuns.length * 0.02;
+  xHist.forEach((count, x) => {
+    if (count >= minFreq) columns.push(x);
+  });
+  columns.sort((a, b) => a - b);
+
+  return {
+    dominantFontSize: bodySize,
+    dominantLineHeight: bodySize * 1.35,
+    averageCharWidth: avgCharWidth,
+    masterGrid: {
+      columns,
+      margins: { left: marginLeft, right: marginRight, top: 50, bottom: 750 }
+    },
+    typography: { h1, h2, body: bodySize }
+  };
+}
+
+// =============================================================================
+// 2. TEXT ITEM NORMALIZATION
+// =============================================================================
+
+export function normalizeTextItemsToRuns(items: any[], viewport: any): TextRunRaw[] {
+  if (!items || items.length === 0) return [];
+
+  const rawRuns: TextRunRaw[] = items
+    .filter(item => item.str && item.str.trim().length > 0)
+    .map(item => {
+      const tx = item.transform;
+      const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]) || 
+                       Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]) || 12;
+      const x = tx[4];
+      const y = viewport.height - tx[5];
+
+      return {
+        str: item.str,
+        x,
+        y,
+        width: item.width || (item.str.length * fontSize * 0.5),
+        height: fontSize * 1.2,
+        fontSize,
+        fontName: item.fontName || 'unknown',
+        dir: item.dir || 'ltr',
+        rotation: 0,
+        transform: tx,
+        color: '#000000'
+      };
+    });
+
+  if (rawRuns.length === 0) {
+    console.warn('No text runs extracted - PDF may be scanned/image-based');
+    return [];
+  }
+
+  // Clean up: remove shadows/duplicates, merge fragments
+  const deduped = removeShadowDuplicates(rawRuns);
+  const merged = mergeAdjacentRuns(deduped);
+  
+  console.log(`normalizeTextItemsToRuns: ${items.length} items → ${merged.length} runs`);
+  return merged;
+}
+
+function removeShadowDuplicates(runs: TextRunRaw[]): TextRunRaw[] {
+  // Sort by position
+  runs.sort((a, b) => {
+    const yDiff = a.y - b.y;
+    if (Math.abs(yDiff) > 2) return yDiff;
+    return a.x - b.x;
+  });
+
+  const clean: TextRunRaw[] = [];
+  for (const run of runs) {
+    // Check if this is a duplicate (same text at nearly same position)
+    const isDupe = clean.some(c => 
+      c.str === run.str && 
+      Math.abs(c.x - run.x) < 2 && 
+      Math.abs(c.y - run.y) < 2
+    );
+    if (!isDupe) clean.push(run);
+  }
+  return clean;
+}
+
+function mergeAdjacentRuns(runs: TextRunRaw[]): TextRunRaw[] {
+  // Sort by line (Y), then by X
+  runs.sort((a, b) => {
+    const yDiff = a.y - b.y;
+    if (Math.abs(yDiff) > 3) return yDiff;
+    return a.x - b.x;
+  });
+
+  const merged: TextRunRaw[] = [];
+  let current: TextRunRaw | null = null;
+
+  for (const run of runs) {
+    if (!current) {
+      current = { ...run };
+      continue;
+    }
+
+    // Check if runs are on same line and adjacent
+    const sameLine = Math.abs(current.y - run.y) < (current.fontSize * 0.5);
+    const gap = run.x - (current.x + current.width);
+    const isAdjacent = gap < (current.fontSize * 0.4) && gap > -(current.fontSize * 0.3);
+    const sameFont = Math.abs(current.fontSize - run.fontSize) < 1;
+
+    if (sameLine && isAdjacent && sameFont) {
+      // Merge
+      current.str += run.str;
+      current.width = (run.x + run.width) - current.x;
     } else {
-      // New line
-      if (currentLine.length > 0) {
-        lines.push(createLineFromRuns(currentLine));
-      }
-      currentLine = [run];
-      currentY = run.y;
+      merged.push(current);
+      current = { ...run };
     }
   }
   
-  if (currentLine.length > 0) {
-    lines.push(createLineFromRuns(currentLine));
+  if (current) merged.push(current);
+  return merged;
+}
+
+// =============================================================================
+// 3. SMART LINE DETECTION
+// =============================================================================
+
+function groupRunsIntoLines(runs: TextRunRaw[], stats: GlobalStats): TextLine[] {
+  if (runs.length === 0) return [];
+
+  // Sort all runs by Y position
+  const sorted = [...runs].sort((a, b) => a.y - b.y);
+  
+  const lines: TextLine[] = [];
+  let currentLineRuns: TextRunRaw[] = [sorted[0]];
+  let currentY = sorted[0].y;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const run = sorted[i];
+    const yThreshold = stats.dominantFontSize * 0.6; // Tolerance for same line
+
+    if (Math.abs(run.y - currentY) <= yThreshold) {
+      // Same line
+      currentLineRuns.push(run);
+      // Update Y to weighted average
+      currentY = (currentY * (currentLineRuns.length - 1) + run.y) / currentLineRuns.length;
+    } else {
+      // New line - finalize current
+      if (currentLineRuns.length > 0) {
+        lines.push(createTextLine(currentLineRuns, stats));
+      }
+      currentLineRuns = [run];
+      currentY = run.y;
+    }
+  }
+
+  // Don't forget last line
+  if (currentLineRuns.length > 0) {
+    lines.push(createTextLine(currentLineRuns, stats));
   }
 
   return lines;
 }
 
-function createLineFromRuns(runs: TextRunRaw[]): TextLine {
-  // Sort runs by X just in case
+function createTextLine(runs: TextRunRaw[], stats: GlobalStats): TextLine {
+  // Sort runs left-to-right
   runs.sort((a, b) => a.x - b.x);
-  
-  const first = runs[0];
-  const last = runs[runs.length - 1];
-  
-  // Average Y
-  const avgY = runs.reduce((sum, r) => sum + r.y, 0) / runs.length;
-  
-  // Max height in line
-  const maxHeight = Math.max(...runs.map(r => r.height));
+
+  // Calculate bounds
+  let minX = Infinity, maxX = -Infinity;
+  let totalY = 0, totalHeight = 0, totalFontSize = 0;
+
+  runs.forEach(r => {
+    minX = Math.min(minX, r.x);
+    maxX = Math.max(maxX, r.x + r.width);
+    totalY += r.y;
+    totalHeight += r.height;
+    totalFontSize += r.fontSize;
+  });
+
+  const avgY = totalY / runs.length;
+  const avgHeight = totalHeight / runs.length;
+  const avgFontSize = totalFontSize / runs.length;
+
+  // Build text with proper spacing
+  let text = '';
+  for (let i = 0; i < runs.length; i++) {
+    if (i > 0) {
+      const gap = runs[i].x - (runs[i - 1].x + runs[i - 1].width);
+      const spaceWidth = stats.averageCharWidth * 0.8;
+      
+      if (gap > spaceWidth * 3) {
+        // Large gap - tab-like spacing
+        text += '\t';
+      } else if (gap > spaceWidth * 0.3) {
+        // Normal word space
+        text += ' ';
+      }
+      // If gap is tiny or negative, no space needed (kerned text)
+    }
+    text += runs[i].str;
+  }
 
   return {
     runs,
     y: avgY,
-    xStart: first.x,
-    xEnd: last.x + last.width,
-    height: maxHeight
+    minX,
+    maxX,
+    height: avgHeight,
+    text: text.trim(),
+    fontSize: avgFontSize,
+    indent: minX - stats.masterGrid.margins.left
   };
 }
 
-/**
- * Step 2: Detect columns
- * Simple 1D clustering on xStart
- */
-export function detectColumns(lines: TextLine[], pageWidth: number): TextLine[] {
-  // If no lines, return
-  if (lines.length === 0) return lines;
+// =============================================================================
+// 4. SMART PARAGRAPH DETECTION
+// =============================================================================
 
-  // 1. Identify potential column starts
-  // We look for significant gaps in the x-projection of text
-  // For now, a simpler approach:
-  // Cluster lines by their xStart.
-  
-  // Sort lines by xStart to find clusters
-  const xSorted = [...lines].sort((a, b) => a.xStart - b.xStart);
-  
-  // Naive column assignment:
-  // If a line starts significantly to the right of the previous cluster, it's a new column?
-  // This is tricky because indentation exists.
-  
-  // Better approach:
-  // Check for vertical overlap. If two blocks of text don't overlap horizontally, they are columns.
-  // But we are processing line by line.
-  
-  // Let's stick to the plan: assign columnIndex based on xStart clusters.
-  // We'll use a simple threshold.
-  
-  // Find "centers" of columns
-  // This is a hard problem to solve perfectly without global analysis.
-  // Let's try a simple heuristic:
-  // Split page into left/right halves if we see text starting past 45% of width?
-  
-  // For V1, let's assume single column unless we detect a clear split.
-  // We'll assign columnIndex = 0 for everyone for now to be safe, 
-  // unless we implement the full projection profile.
-  
-  // TODO: Implement robust column detection
-  lines.forEach(l => l.columnIndex = 0);
-  
-  return lines;
-}
+function groupLinesIntoParagraphs(lines: TextLine[], stats: GlobalStats): Paragraph[] {
+  if (lines.length === 0) return [];
 
-/**
- * Step 2.5: Detect Tables
- * Identifies groups of lines that look like tables and extracts them.
- */
-export function detectTables(lines: TextLine[], pageDims: { width: number, height: number }, stats?: PageStats): { tables: TableBlock[], remainingLines: TextLine[] } {
-  const tables: TableBlock[] = [];
-  const remainingLines: TextLine[] = [];
+  // Sort lines by Y position (top to bottom)
+  const sorted = [...lines].sort((a, b) => a.y - b.y);
   
-  const colGapThreshold = stats ? stats.dominantFontSize * 1.5 : DEFAULT_COL_GAP_THRESHOLD;
-  const xAlignTolerance = stats ? stats.dominantFontSize * 0.8 : DEFAULT_X_ALIGN_TOLERANCE;
+  const paragraphs: Paragraph[] = [];
+  let currentPara: TextLine[] = [sorted[0]];
 
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
+  for (let i = 1; i < sorted.length; i++) {
+    const prevLine = currentPara[currentPara.length - 1];
+    const currLine = sorted[i];
+
+    // Calculate vertical gap between lines
+    const verticalGap = currLine.y - (prevLine.y + prevLine.height);
+    const normalLineGap = stats.dominantLineHeight * 0.4;
+    const paragraphGap = stats.dominantLineHeight * 1.0;
+
+    // Check for paragraph break conditions
+    const isLargeGap = verticalGap > paragraphGap;
+    const isDifferentFontSize = Math.abs(currLine.fontSize - prevLine.fontSize) > 2;
+    const isSignificantIndentChange = Math.abs(currLine.indent - prevLine.indent) > stats.dominantFontSize * 3;
+    const isPrevLineShort = (prevLine.maxX - prevLine.minX) < (stats.masterGrid.margins.right - stats.masterGrid.margins.left) * 0.6;
     
-    // Heuristic: A table row usually has multiple distinct text runs separated by gaps
-    // We check if this line has > 1 run and if those runs are spaced out
-    // This is a very naive check. A better one would check for vertical alignment with next lines.
-    
-    const isPotentialTableRow = (l: TextLine) => {
-      if (l.runs.length < 2) return false;
-      // Check for gaps
-      // We need to sort runs by X first (already done in createLineFromRuns)
-      let maxGap = 0;
-      for (let j = 0; j < l.runs.length - 1; j++) {
-        const gap = l.runs[j+1].x - (l.runs[j].x + l.runs[j].width);
-        if (gap > colGapThreshold) return true;
-      }
-      return false;
-    };
+    // Check if current line looks like a header
+    const isHeader = currLine.fontSize > stats.typography.body * 1.15;
+    const prevWasHeader = prevLine.fontSize > stats.typography.body * 1.15;
 
-    if (isPotentialTableRow(line)) {
-      // Look ahead to see if subsequent lines also look like table rows
-      // and if they align vertically (share similar column starts)
-      const tableLines: TextLine[] = [line];
-      let j = i + 1;
-      
-      while (j < lines.length) {
-        const nextLine = lines[j];
-        
-        // Break if vertical gap is too large (end of table)
-        if (nextLine.y - lines[j-1].y > lines[j-1].height * 2.5) break;
-        
-        // Check for "Note:" or similar keywords that indicate end of table
-        const firstRunStr = nextLine.runs[0]?.str.trim().toLowerCase() || '';
-        const isNote = firstRunStr.startsWith('note:') || firstRunStr.startsWith('source:') || firstRunStr.startsWith('remark:');
-        
-        if (isNote) break;
-        
-        // If it looks like a row, add it
-        // Even if it has 1 run, it might be a cell in a table (e.g. total)
-        // But for now let's require structure or alignment
-        
-        // Check alignment with previous row
-        // Simple check: does at least one run start at similar X as a run in previous row?
-        const hasAlignment = nextLine.runs.some(r => 
-          tableLines.some(tl => tl.runs.some(tr => Math.abs(tr.x - r.x) < xAlignTolerance))
-        );
-        
-        if (hasAlignment || isPotentialTableRow(nextLine)) {
-          tableLines.push(nextLine);
-          j++;
-        } else {
-          break;
-        }
-      }
-      
-      // If we found enough lines to constitute a table (e.g. >= 2)
-      if (tableLines.length >= 2) {
-        // Create Table Block
-        const tableBlock = createTableBlock(tableLines, pageDims, stats);
-        tables.push(tableBlock);
-        i = j; // Skip processed lines
-        continue;
-      }
-    }
-    
-    remainingLines.push(line);
-    i++;
-  }
-  
-  return { tables, remainingLines };
-}
+    // Check if current line starts with list marker
+    const isListItem = /^[\u2022\u2023\u2043\-\*]\s|^\d+[\.\)]\s|^[a-zA-Z][\.\)]\s/.test(currLine.text);
+    const prevWasListItem = /^[\u2022\u2023\u2043\-\*]\s|^\d+[\.\)]\s|^[a-zA-Z][\.\)]\s/.test(prevLine.text);
 
-function createTableBlock(lines: TextLine[], pageDims: { width: number, height: number }, stats?: PageStats): TableBlock {
-  // Calculate bounding box
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  lines.forEach(l => {
-    minX = Math.min(minX, l.xStart);
-    minY = Math.min(minY, l.y - l.height); // Top
-    maxX = Math.max(maxX, l.xEnd);
-    maxY = Math.max(maxY, l.y + l.height); // Bottom (approx)
-  });
+    // Decide if new paragraph
+    const shouldBreak = 
+      isLargeGap ||
+      (isDifferentFontSize && (isHeader || prevWasHeader)) ||
+      (isSignificantIndentChange && !isListItem && !prevWasListItem) ||
+      (isPrevLineShort && verticalGap > normalLineGap && !isListItem);
 
-  // Add padding to the table box to ensure we cover background artifacts
-  const paddingX = 15;
-  const paddingY = 10;
-  
-  minX = Math.max(0, minX - paddingX);
-  maxX = Math.min(pageDims.width, maxX + paddingX);
-  minY = Math.max(0, minY - paddingY);
-  maxY = Math.min(pageDims.height, maxY + paddingY);
-  
-  // Convert to %
-  const box: [number, number, number, number] = [
-    (minX / pageDims.width) * 100,
-    (minY / pageDims.height) * 100,
-    ((maxX - minX) / pageDims.width) * 100,
-    ((maxY - minY) / pageDims.height) * 100
-  ];
-
-  // Identify Columns (Global Grid Inference)
-  // Use a projection profile to find vertical gaps across the most populated rows
-  
-  // 1. Filter for "dense" rows to avoid headers skewing the column detection
-  const maxRuns = Math.max(...lines.map(l => l.runs.length));
-  const denseLines = lines.filter(l => l.runs.length >= Math.max(1, maxRuns - 2));
-  
-  // 2. Build Projection Profile
-  // We map the X-axis relative to minX
-  const widthInt = Math.ceil(maxX - minX);
-  const profile = new Int8Array(widthInt).fill(0);
-  
-  denseLines.forEach(line => {
-    line.runs.forEach(run => {
-      const start = Math.max(0, Math.floor(run.x - minX));
-      const end = Math.min(widthInt, Math.ceil(run.x + run.width - minX));
-      for (let i = start; i < end; i++) {
-        profile[i] = 1;
-      }
-    });
-  });
-  
-  // 3. Find Gaps (sequences of 0s)
-  const columnBoundaries: number[] = [minX];
-  let inGap = false;
-  let gapStart = 0;
-  
-  const minGapWidth = stats ? stats.dominantFontSize * 0.2 : 2;
-
-  // Scan profile
-  for (let i = 0; i < widthInt; i++) {
-    const isText = profile[i] === 1;
-    
-    if (!isText && !inGap) {
-      inGap = true;
-      gapStart = i;
-    } else if (isText && inGap) {
-      inGap = false;
-      // Gap ended at i. Gap center is (gapStart + i) / 2
-      // Only count gaps that are significant? (e.g. > 2px)
-      if (i - gapStart > minGapWidth) {
-         const center = minX + (gapStart + i) / 2;
-         columnBoundaries.push(center);
-      }
+    if (shouldBreak) {
+      // Finalize current paragraph
+      paragraphs.push(createParagraph(currentPara, stats));
+      currentPara = [currLine];
+    } else {
+      currentPara.push(currLine);
     }
   }
-  columnBoundaries.push(maxX);
-  
-  // Ensure boundaries are sorted
-  columnBoundaries.sort((a, b) => a - b);
 
-  // Create Rows
-  // Sort lines by Y (Top to Bottom) to ensure correct vertical ordering
-  const sortedLines = [...lines].sort((a, b) => a.y - b.y);
-
-  // Cluster lines into logical rows based on vertical proximity
-  const logicalRows: TextLine[][] = [];
-  if (sortedLines.length > 0) {
-    let currentRow: TextLine[] = [sortedLines[0]];
-    
-    for (let i = 1; i < sortedLines.length; i++) {
-      const line = sortedLines[i];
-      const prevLine = currentRow[currentRow.length - 1];
-      
-      // Calculate vertical gap
-      const baselineDist = line.y - prevLine.y;
-      const avgHeight = (line.height + prevLine.height) / 2;
-      
-      // Heuristic: Merge if baseline distance is small (< 0.5 * height)
-      // Reduced from 1.3 to 0.5 to prevent merging of separate rows (e.g. Header vs Data)
-      // This might split wrapped text into separate rows, but that is safer than merging distinct data rows.
-      // Use dynamic threshold if available
-      const mergeThreshold = stats ? 0.8 : 1.0; // Slightly stricter if we have stats? Or looser?
-      // Actually, 1.0 * avgHeight is what it was.
-      
-      if (baselineDist < avgHeight * mergeThreshold) {
-        currentRow.push(line);
-      } else {
-        logicalRows.push(currentRow);
-        currentRow = [line];
-      }
-    }
-    logicalRows.push(currentRow);
+  // Don't forget last paragraph
+  if (currentPara.length > 0) {
+    paragraphs.push(createParagraph(currentPara, stats));
   }
 
-  const rows: TableRow[] = logicalRows.map((rowLines, rowIndex) => {
-    // Collect all runs from all lines in this row
-    const allRuns = rowLines.flatMap(l => l.runs);
-    const sortedRuns = [...allRuns].sort((a, b) => a.x - b.x);
-    
-    // Determine row vertical bounds
-    const rowTopY = Math.min(...rowLines.map(l => l.y - l.height));
-    const rowBottomY = Math.max(...rowLines.map(l => l.y));
-    
-    // Map runs to columns
-    // We have N columns defined by N+1 boundaries
-    const cells: TableCell[] = [];
-    
-    for (let i = 0; i < columnBoundaries.length - 1; i++) {
-      const colStart = columnBoundaries[i];
-      const colEnd = columnBoundaries[i+1];
-      const colWidth = colEnd - colStart;
-      
-      // Find runs that belong to this column
-      // Handle split runs (runs that span multiple columns)
-      const colRuns: { str: string, style: any, y: number, x: number }[] = [];
-      
-      sortedRuns.forEach(run => {
-         const runStart = run.x;
-         const runEnd = run.x + run.width;
-         
-         // Quick check: disjoint
-         if (runEnd <= colStart || runStart >= colEnd) return;
-         
-         // Overlap exists
-         if (runStart >= colStart && runEnd <= colEnd) {
-            // Full inclusion
-            colRuns.push({ str: run.str, style: run, y: run.y, x: run.x });
-         } else {
-            // Partial inclusion - Split text
-            const charWidth = run.width / Math.max(1, run.str.length);
-            let includedText = '';
-            let firstCharX = -1;
-            
-            for (let k = 0; k < run.str.length; k++) {
-               const charCenter = run.x + (k * charWidth) + (charWidth / 2);
-               if (charCenter >= colStart && charCenter < colEnd) {
-                  if (firstCharX === -1) firstCharX = run.x + (k * charWidth);
-                  includedText += run.str[k];
-               }
-            }
-            
-            if (includedText) {
-               colRuns.push({ str: includedText, style: run, y: run.y, x: firstCharX });
-            }
-         }
-      });
-      
-      let content = '';
-      let styles = {};
-      
-      if (colRuns.length > 0) {
-        // Sort by Y then X to handle wrapped text correctly
-        colRuns.sort((a, b) => {
-            // Use style.height for tolerance
-            if (Math.abs(a.y - b.y) > a.style.height * 0.5) return a.y - b.y;
-            return a.x - b.x;
-        });
-        
-        content = colRuns.map(r => r.str).join(' ');
-        // Use style of first run
-        const r = colRuns[0].style;
-        styles = {
-          fontSize: r.fontSize,
-          fontFamily: r.fontName,
-          fontWeight: r.fontName.toLowerCase().includes('bold') ? 700 : 400,
-          color: r.color || '#000000',
-          italic: r.fontName.toLowerCase().includes('italic'),
-        };
-      }
-      
-      // Vertical Expansion
-      let cellTop = rowTopY;
-      let cellHeight = rowBottomY - rowTopY;
-      
-      // Ensure minimum height
-      if (cellHeight < 10) cellHeight = 10;
-
-      // Expand Top
-      if (rowIndex === 0) {
-         const diff = cellTop - minY;
-         cellTop -= diff;
-         cellHeight += diff;
-      } else {
-         const prevRowLines = logicalRows[rowIndex - 1];
-         const prevBottom = Math.max(...prevRowLines.map(l => l.y));
-         const gap = cellTop - prevBottom;
-         if (gap > 0) {
-             cellTop -= (gap / 2);
-             cellHeight += (gap / 2);
-         }
-      }
-      
-      // Expand Bottom
-      if (rowIndex === logicalRows.length - 1) {
-          const diff = maxY - (cellTop + cellHeight);
-          cellHeight += diff;
-      } else {
-          const nextRowLines = logicalRows[rowIndex + 1];
-          const nextTop = Math.min(...nextRowLines.map(l => l.y - l.height));
-          const currentBottom = rowBottomY;
-          const gap = nextTop - currentBottom;
-          if (gap > 0) {
-              cellHeight += (gap / 2);
-          }
-      }
-
-      // Calculate cell box in %
-      const cellBox: [number, number, number, number] = [
-        (colStart / pageDims.width) * 100,
-        (cellTop / pageDims.height) * 100,
-        (colWidth / pageDims.width) * 100,
-        (cellHeight / pageDims.height) * 100
-      ];
-
-      cells.push({
-        content,
-        box: cellBox,
-        width: (colWidth / (maxX - minX)) * 100,
-        align: 'left',
-        styles
-      });
-    }
-    
-    return {
-      cells,
-      height: rowBottomY - rowTopY
-    };
-  });
-
-  return {
-    id: `table-${Date.now()}-${Math.random()}`,
-    type: 'table',
-    box,
-    rows
-  };
-}
-
-/**
- * Step 3: Group lines into paragraphs
- */
-export function groupLinesIntoParagraphs(lines: TextLine[], stats?: PageStats): TextParagraph[] {
-  // Sort by Y again to be sure
-  lines.sort((a, b) => a.y - b.y);
-
-  const paragraphs: TextParagraph[] = [];
-  let currentParaLines: TextLine[] = [];
-  
-  // We need to track stats per column ideally
-  // For now assuming single column or pre-sorted by column
-  
-  const breakRatio = stats ? (stats.dominantLineHeight / stats.dominantFontSize) * 1.5 : DEFAULT_PARAGRAPH_BREAK_RATIO;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    if (currentParaLines.length === 0) {
-      currentParaLines.push(line);
-      continue;
-    }
-    
-    const prevLine = currentParaLines[currentParaLines.length - 1];
-    
-    // Check 1: Same column?
-    if (line.columnIndex !== prevLine.columnIndex) {
-      paragraphs.push(createParagraph(currentParaLines));
-      currentParaLines = [line];
-      continue;
-    }
-    
-    // Check 2: Vertical spacing
-    const dy = line.y - prevLine.y;
-    const lineHeight = Math.max(prevLine.height, line.height);
-    
-    // If gap is too large, new paragraph
-    if (dy > lineHeight * breakRatio) {
-      paragraphs.push(createParagraph(currentParaLines));
-      currentParaLines = [line];
-      continue;
-    }
-    
-    // Check 3: Horizontal alignment (optional but good)
-    // If line starts way to the left or right of previous, might be distinct
-    // But indentation is valid in paragraphs.
-    // Let's rely mostly on vertical spacing for now.
-    
-    currentParaLines.push(line);
-  }
-  
-  if (currentParaLines.length > 0) {
-    paragraphs.push(createParagraph(currentParaLines));
-  }
-  
   return paragraphs;
 }
 
-function createParagraph(lines: TextLine[]): TextParagraph {
-  // Compute bounding box
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  
+function createParagraph(lines: TextLine[], stats: GlobalStats): Paragraph {
+  let minX = Infinity, minY = Infinity;
+  let maxX = -Infinity, maxY = -Infinity;
+  let totalFontSize = 0;
+
   lines.forEach(line => {
-    minX = Math.min(minX, line.xStart);
-    minY = Math.min(minY, line.y); // line.y is baseline-ish
-    maxX = Math.max(maxX, line.xEnd);
+    minX = Math.min(minX, line.minX);
+    minY = Math.min(minY, line.y);
+    maxX = Math.max(maxX, line.maxX);
     maxY = Math.max(maxY, line.y + line.height);
+    totalFontSize += line.fontSize;
   });
-  
-  // Adjust minY to be top of first line
-  // line.y is approx baseline, so top is y - fontSize?
-  // We normalized y to be top-left based, but let's refine.
-  // In normalizeTextItemsToRuns, we did y = viewport.height - tx[5].
-  // tx[5] is baseline y in PDF. So y is baseline from top.
-  // So top of line is y - fontSize.
-  
-  const firstLineHeight = lines[0].height;
-  minY = lines[0].y - firstLineHeight; 
+
+  const avgFontSize = totalFontSize / lines.length;
+  const firstLine = lines[0];
+
+  // Determine if header
+  const isHeader = avgFontSize >= stats.typography.h2 || 
+                   (lines.length === 1 && avgFontSize > stats.typography.body * 1.1);
+
+  // Determine if list item
+  const isListItem = /^[\u2022\u2023\u2043\-\*]\s|^\d+[\.\)]\s|^[a-zA-Z][\.\)]\s/.test(firstLine.text);
 
   return {
     lines,
-    columnIndex: lines[0].columnIndex || 0,
-    boundingBox: {
-      x: minX,
-      y: minY,
-      w: maxX - minX,
-      h: maxY - minY
+    minX,
+    minY,
+    maxX,
+    maxY,
+    fontSize: avgFontSize,
+    isHeader,
+    isListItem
+  };
+}
+
+// =============================================================================
+// 5. COLUMN DETECTION
+// =============================================================================
+
+function detectAndSplitColumns(paragraphs: Paragraph[], stats: GlobalStats, pageDims: { width: number; height: number }): Paragraph[][] {
+  if (paragraphs.length === 0) return [[]];
+
+  // Analyze X distribution to find column boundaries
+  const pageWidth = pageDims.width;
+  const midPoint = pageWidth / 2;
+  const columnGapThreshold = stats.dominantFontSize * 3;
+  
+  // Check if there's a clear vertical gap in the middle
+  const leftParas: Paragraph[] = [];
+  const rightParas: Paragraph[] = [];
+  const fullWidthParas: Paragraph[] = [];
+
+  paragraphs.forEach(para => {
+    const paraWidth = para.maxX - para.minX;
+
+    // Is this a full-width paragraph?
+    if (paraWidth > pageWidth * 0.55) {
+      fullWidthParas.push(para);
+    } else if (para.maxX < midPoint - columnGapThreshold) {
+      leftParas.push(para);
+    } else if (para.minX > midPoint + columnGapThreshold) {
+      rightParas.push(para);
+    } else {
+      fullWidthParas.push(para);
+    }
+  });
+
+  // If we have clear left/right separation, treat as 2 columns
+  if (leftParas.length > 2 && rightParas.length > 2) {
+    return [
+      [...leftParas].sort((a, b) => a.minY - b.minY),
+      [...rightParas].sort((a, b) => a.minY - b.minY)
+    ];
+  }
+
+  // Single column layout - merge all and sort by Y
+  return [[...fullWidthParas, ...leftParas, ...rightParas].sort((a, b) => a.minY - b.minY)];
+}
+
+// =============================================================================
+// 6. MAIN LAYOUT ANALYSIS
+// =============================================================================
+
+export function analyzePageLayout(
+  runs: TextRunRaw[],
+  separators: Separator[],
+  pageDims: { width: number; height: number },
+  globalStats: GlobalStats
+): TextBlock[] {
+  if (runs.length === 0) {
+    console.log('analyzePageLayout: No runs to process');
+    return [];
+  }
+
+  console.log(`analyzePageLayout: Processing ${runs.length} runs for ${pageDims.width}x${pageDims.height} page`);
+
+  // Step 1: Group runs into lines
+  const lines = groupRunsIntoLines(runs, globalStats);
+  console.log(`  → ${lines.length} lines detected`);
+
+  // Step 2: Group lines into paragraphs
+  const paragraphs = groupLinesIntoParagraphs(lines, globalStats);
+  console.log(`  → ${paragraphs.length} paragraphs detected`);
+
+  // Step 3: Detect columns (optional enhancement)
+  const columns = detectAndSplitColumns(paragraphs, globalStats, pageDims);
+  console.log(`  → ${columns.length} column(s) detected`);
+
+  // Step 4: Convert paragraphs to TextBlocks
+  const blocks: TextBlock[] = [];
+
+  columns.forEach((columnParas, colIndex) => {
+    columnParas.forEach(para => {
+      const block = paragraphToTextBlock(para, pageDims, globalStats, colIndex);
+      if (block.html.trim().length > 0) {
+        blocks.push(block);
+      }
+    });
+  });
+
+  // Step 5: Resolve overlapping blocks - push them apart
+  const resolvedBlocks = resolveBlockOverlaps(blocks);
+
+  console.log(`  → ${resolvedBlocks.length} text blocks created (overlaps resolved)`);
+  return resolvedBlocks;
+}
+
+// =============================================================================
+// 7. COLLISION DETECTION & RESOLUTION
+// =============================================================================
+
+function resolveBlockOverlaps(blocks: TextBlock[]): TextBlock[] {
+  if (blocks.length < 2) return blocks;
+
+  // Sort blocks by Y position (top to bottom), then by X (left to right)
+  const sorted = [...blocks].sort((a, b) => {
+    const yDiff = a.box[1] - b.box[1];
+    if (Math.abs(yDiff) > 0.5) return yDiff;
+    return a.box[0] - b.box[0];
+  });
+
+  // Minimum gap between blocks (in percentage)
+  const MIN_GAP = 0.3; // 0.3% of page height
+
+  // Process each block and adjust if it overlaps with previous blocks
+  for (let i = 1; i < sorted.length; i++) {
+    const current = sorted[i];
+    
+    // Check against all previous blocks for overlap
+    for (let j = 0; j < i; j++) {
+      const other = sorted[j];
+      
+      // Check if boxes overlap
+      const overlap = getOverlap(current.box, other.box);
+      
+      if (overlap.overlaps) {
+        // Determine best direction to push current block
+        // Usually push down (increase Y) since we process top-to-bottom
+        
+        if (overlap.horizontalOverlap > 0 && overlap.verticalOverlap > 0) {
+          // Real overlap - need to resolve
+          
+          // Check if blocks are roughly in the same column (X overlaps significantly)
+          const currentCenterX = current.box[0] + current.box[2] / 2;
+          const otherCenterX = other.box[0] + other.box[2] / 2;
+          const xDistance = Math.abs(currentCenterX - otherCenterX);
+          
+          if (xDistance < Math.max(current.box[2], other.box[2]) * 0.7) {
+            // Same column - push down
+            const newY = other.box[1] + other.box[3] + MIN_GAP;
+            current.box[1] = newY;
+          } else {
+            // Different columns - they shouldn't overlap, but if they do,
+            // push the one that's more to the right further right
+            if (current.box[0] > other.box[0]) {
+              current.box[0] = other.box[0] + other.box[2] + MIN_GAP;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Ensure no block goes off-page
+  sorted.forEach(block => {
+    // Clamp Y to page bounds
+    if (block.box[1] < 0) block.box[1] = 0;
+    if (block.box[1] + block.box[3] > 100) {
+      block.box[1] = Math.max(0, 100 - block.box[3]);
+    }
+    // Clamp X to page bounds
+    if (block.box[0] < 0) block.box[0] = 0;
+    if (block.box[0] + block.box[2] > 100) {
+      block.box[0] = Math.max(0, 100 - block.box[2]);
+    }
+  });
+
+  return sorted;
+}
+
+function getOverlap(boxA: [number, number, number, number], boxB: [number, number, number, number]): {
+  overlaps: boolean;
+  horizontalOverlap: number;
+  verticalOverlap: number;
+} {
+  // Box format: [x, y, width, height] in percentages
+  const [ax, ay, aw, ah] = boxA;
+  const [bx, by, bw, bh] = boxB;
+
+  // Calculate overlap in each dimension
+  const horizontalOverlap = Math.min(ax + aw, bx + bw) - Math.max(ax, bx);
+  const verticalOverlap = Math.min(ay + ah, by + bh) - Math.max(ay, by);
+
+  return {
+    overlaps: horizontalOverlap > 0 && verticalOverlap > 0,
+    horizontalOverlap: Math.max(0, horizontalOverlap),
+    verticalOverlap: Math.max(0, verticalOverlap)
+  };
+}
+
+function paragraphToTextBlock(
+  para: Paragraph,
+  pageDims: { width: number; height: number },
+  stats: GlobalStats,
+  columnIndex: number
+): TextBlock {
+  // Build clean text from lines
+  let html = '';
+  
+  para.lines.forEach((line, i) => {
+    if (i > 0) {
+      // Add line break between lines in same paragraph
+      html += '\n';
+    }
+    html += line.text;
+  });
+
+  // Calculate box as percentages with small padding
+  const padding = 2; // 2pt padding
+  const x = ((para.minX - padding) / pageDims.width) * 100;
+  const y = ((para.minY - padding) / pageDims.height) * 100;
+  const w = ((para.maxX - para.minX + padding * 2) / pageDims.width) * 100;
+  const h = ((para.maxY - para.minY + padding * 2) / pageDims.height) * 100;
+
+  // Get font info from first run of first line
+  const firstRun = para.lines[0]?.runs[0];
+  const fontName = firstRun?.fontName || 'unknown';
+  const isBold = fontName.toLowerCase().includes('bold');
+  const isItalic = fontName.toLowerCase().includes('italic');
+
+  // Determine semantic role
+  let role: 'h1' | 'h2' | 'body' | 'caption' = 'body';
+  if (para.fontSize >= stats.typography.h1) role = 'h1';
+  else if (para.fontSize >= stats.typography.h2) role = 'h2';
+  else if (para.fontSize < stats.typography.body * 0.85) role = 'caption';
+
+  return {
+    id: `blk-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    type: 'text',
+    html,
+    box: [
+      Math.max(0, x),
+      Math.max(0, y),
+      Math.min(100, w),
+      Math.min(100, h)
+    ],
+    styles: {
+      fontSize: para.fontSize,
+      fontFamily: cleanFontName(fontName),
+      fontWeight: isBold || para.isHeader ? 700 : 400,
+      color: firstRun?.color || '#000000',
+      align: detectAlignment(para, stats),
+      letterSpacing: 0,
+      italic: isItalic,
+      underline: false,
+      lineHeight: para.lines.length > 1 ? 1.5 : null
+    },
+    meta: {
+      isHeader: para.isHeader,
+      isListItem: para.isListItem,
+      isCaption: role === 'caption',
+      rotation: 0,
+      lineHeightRatio: 1.5,
+      columnIndex,
+      sourceRuns: para.lines.reduce((sum, l) => sum + l.runs.length, 0)
     }
   };
 }
 
-function variance(nums: number[]) {
-  if (nums.length <= 1) return 0;
-  const avg = nums.reduce((a,b)=>a+b,0)/nums.length;
-  return nums.reduce((a,b)=>a + Math.pow(b-avg, 2), 0) / nums.length;
-}
+function detectAlignment(para: Paragraph, stats: GlobalStats): 'left' | 'center' | 'right' | 'justify' {
+  const leftMargin = stats.masterGrid.margins.left;
+  const rightMargin = stats.masterGrid.margins.right;
+  const pageWidth = rightMargin - leftMargin;
 
-function detectAlignment(lines: TextLine[], pageDims: { width: number, height: number }): 'left' | 'center' | 'right' | 'justify' {
-  if (lines.length === 0) return 'left';
-  
-  // Calculate page center (assuming single column for now)
-  // TODO: Use column bounds if available
-  const pageCenter = pageDims.width / 2;
-  
-  // Check for Center Alignment
-  // A line is centered if its midpoint is close to page center
-  let centerCount = 0;
-  lines.forEach(l => {
-    const mid = l.xStart + (l.xEnd - l.xStart) / 2;
-    if (Math.abs(mid - pageCenter) < 20) { // 20px tolerance
-      centerCount++;
-    }
-  });
-  
-  if (centerCount > lines.length * 0.6) return 'center';
-  
-  // Check for Right Alignment vs Left vs Justify
-  const xStarts = lines.map(l => l.xStart);
-  const xEnds = lines.map(l => l.xEnd);
-  
-  const varStart = variance(xStarts);
-  const varEnd = variance(xEnds);
-  
-  // Low variance means aligned
-  const isLeftAligned = varStart < 20;
-  const isRightAligned = varEnd < 20;
-  
-  if (isLeftAligned && isRightAligned && lines.length > 1) return 'justify';
-  if (isRightAligned && !isLeftAligned) return 'right';
-  
-  return 'left'; // Default
+  const paraWidth = para.maxX - para.minX;
+  const leftOffset = para.minX - leftMargin;
+  const rightOffset = rightMargin - para.maxX;
+
+  // If paragraph is centered
+  if (Math.abs(leftOffset - rightOffset) < pageWidth * 0.1 && paraWidth < pageWidth * 0.7) {
+    return 'center';
+  }
+
+  // If aligned to right
+  if (rightOffset < leftOffset * 0.3 && leftOffset > pageWidth * 0.2) {
+    return 'right';
+  }
+
+  // Default to left
+  return 'left';
 }
 
 function cleanFontName(fontName: string): string {
-  // Remove subset prefix (e.g. ABCDEF+Verdana)
-  let name = fontName;
-  if (name.includes('+')) {
-    name = name.split('+')[1];
-  }
+  if (!fontName || fontName === 'unknown') return 'Inter, sans-serif';
   
-  // Remove common suffixes to get family name
-  // We want to keep the family name clean
-  const suffixes = ['-Bold', '-Italic', '-BoldItalic', 'Bold', 'Italic', 'Regular', 'MT', 'PS'];
-  suffixes.forEach(s => {
-    name = name.replace(new RegExp(s, 'g'), '');
-  });
-  
-  name = name.replace(/-/g, ' ').trim();
-  
-  // Map to standard web fonts
+  let name = fontName.includes('+') ? fontName.split('+')[1] : fontName;
+  name = name.replace(/[-_]/g, ' ').trim();
   const lower = name.toLowerCase();
+
   if (lower.includes('arial')) return 'Arial, sans-serif';
-  if (lower.includes('times')) return '"Times New Roman", Times, serif';
-  if (lower.includes('courier')) return '"Courier New", Courier, monospace';
-  if (lower.includes('helvetica')) return 'Helvetica, sans-serif';
-  if (lower.includes('verdana')) return 'Verdana, sans-serif';
+  if (lower.includes('times')) return '"Times New Roman", serif';
+  if (lower.includes('courier')) return '"Courier New", monospace';
+  if (lower.includes('helvetica')) return 'Helvetica, Arial, sans-serif';
   if (lower.includes('georgia')) return 'Georgia, serif';
-  if (lower.includes('tahoma')) return 'Tahoma, sans-serif';
-  if (lower.includes('trebuchet')) return '"Trebuchet MS", sans-serif';
-  if (lower.includes('calibri')) return 'Calibri, sans-serif';
-  if (lower.includes('cambria')) return 'Cambria, serif';
-  
-  // Fallback: try to use the name, but ensure it's quoted if it has spaces
-  return name.includes(' ') ? `"${name}", sans-serif` : `${name}, sans-serif`;
+  if (lower.includes('verdana')) return 'Verdana, sans-serif';
+  if (lower.includes('roboto')) return 'Roboto, sans-serif';
+
+  return 'Inter, sans-serif';
 }
 
-/**
- * Step 4: Convert paragraphs to TextBlocks
- */
-export function paragraphsToBlocks(paragraphs: TextParagraph[], pageDims: { width: number, height: number }, stats?: PageStats): TextBlock[] {
-  return paragraphs.map((para, index) => {
-    const { x, y, w, h } = para.boundingBox;
-    
-    // Convert to % coordinates
-    const box: [number, number, number, number] = [
-      (x / pageDims.width) * 100,
-      (y / pageDims.height) * 100,
-      (w / pageDims.width) * 100,
-      (h / pageDims.height) * 100
-    ];
-    
-    // Construct HTML content
-    const textContent = para.lines
-      .map(l => l.runs.map(r => r.str).join(''))
-      .join('\n'); 
-      
-    const firstRun = para.lines[0].runs[0];
-    
-    const dominantSize = stats ? stats.dominantFontSize : 11;
-    const isHeader = firstRun.fontSize > (dominantSize * 1.2) || (firstRun.fontSize > dominantSize && firstRun.fontName.toLowerCase().includes('bold'));
+// =============================================================================
+// EXPORTS FOR COMPATIBILITY
+// =============================================================================
 
-    // Detect Alignment
-    const align = detectAlignment(para.lines, pageDims);
-
-    return {
-      id: `block-${index}-${Date.now()}`,
-      type: 'text',
-      html: textContent,
-      box,
-      styles: {
-        fontFamily: cleanFontName(firstRun.fontName),
-        fontSize: firstRun.fontSize,
-        fontWeight: firstRun.fontName.toLowerCase().includes('bold') ? 700 : 400,
-        color: firstRun.color || '#000000',
-        align: align,
-        letterSpacing: 0,
-        italic: firstRun.fontName.toLowerCase().includes('italic'),
-        underline: false,
-        lineHeight: null
-      },
-      meta: {
-        isHeader,
-        isListItem: textContent.trim().startsWith('•') || /^\d+\./.test(textContent.trim()),
-        isCaption: false,
-        rotation: firstRun.rotation,
-        lineHeightRatio: 1.2,
-        columnIndex: para.columnIndex,
-        sourceRuns: para.lines.reduce((acc, l) => acc + l.runs.length, 0)
-      }
-    };
-  });
+export function detectColumns(l: any, w: any) { return l; }
+export function detectTables(l: any, d: any, s: any) { return { tables: [], remainingLines: l }; }
+export function groupRunsIntoLinesExport(r: any, s: any) { return groupRunsIntoLines(r, s); }
+export function paragraphsToBlocks(p: any, d: any, s: any) { return []; }
+export function analyzeFontStatistics(r: any) { 
+  return { dominantFontSize: 12, dominantLineHeight: 14, spaceWidth: 4 };
 }

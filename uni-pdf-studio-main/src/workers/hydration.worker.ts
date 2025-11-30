@@ -4,23 +4,17 @@ import * as pdfjsLib from 'pdfjs-dist';
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?worker';
 import { 
   normalizeTextItemsToRuns, 
-  groupRunsIntoLines, 
-  detectColumns, 
-  detectTables,
-  groupLinesIntoParagraphs, 
-  paragraphsToBlocks,
-  analyzeFontStatistics
+  analyzePageLayout, 
+  calculateGlobalStats 
 } from '../lib/hydration/cluster';
-import { HydratedPage, ImageBlock, TextBlock, TableBlock } from '../types/hydration';
+import { semanticAnalyzer } from '../lib/ai/semantic-analyzer';
+import { HydratedPage, ImageBlock } from '../types/hydration';
 
-// --- POLYFILLS FOR PDF.JS IN WORKER ---
-// PDF.js display layer relies on DOM APIs (document, window, HTMLCanvasElement)
-// We must mock these to allow page.render() to work in a Web Worker.
+// Track if AI is available
+let aiAvailable = false;
 
-if (typeof window === 'undefined') {
-  (self as any).window = self;
-}
-
+// --- POLYFILLS ---
+if (typeof window === 'undefined') (self as any).window = self;
 if (typeof document === 'undefined') {
   (self as any).document = {
     createElement: (tagName: string) => {
@@ -41,51 +35,23 @@ if (typeof document === 'undefined') {
       }
       return { style: {}, tagName: tagName.toUpperCase() };
     },
-    head: {
-      appendChild: () => {}
-    }
+    head: { appendChild: () => {} }
   };
 }
+if (typeof HTMLCanvasElement === 'undefined') (self as any).HTMLCanvasElement = OffscreenCanvas;
+if (typeof requestAnimationFrame === 'undefined') (self as any).requestAnimationFrame = (cb: any) => setTimeout(cb, 0);
+if (typeof cancelAnimationFrame === 'undefined') (self as any).cancelAnimationFrame = (id: any) => clearTimeout(id);
 
-if (typeof HTMLCanvasElement === 'undefined') {
-  // PDF.js checks instanceof HTMLCanvasElement
-  (self as any).HTMLCanvasElement = OffscreenCanvas;
-}
-
-if (typeof requestAnimationFrame === 'undefined') {
-  (self as any).requestAnimationFrame = (callback: any) => setTimeout(callback, 0);
-}
-if (typeof cancelAnimationFrame === 'undefined') {
-  (self as any).cancelAnimationFrame = (id: any) => clearTimeout(id);
-}
-
-// Configure worker
-// In a Vite setup, we usually don't need to set GlobalWorkerOptions.workerSrc inside the worker itself
-// if we are just using the API. However, if pdf.js needs to spawn sub-workers, it might matter.
-// For now, we assume we are the worker and we just use the main thread API of pdf.js (which is weird but works in a worker context)
-// Actually, pdfjsLib.getDocument works in a worker if we pass it data.
-
-// Configure worker with nested worker to avoid public URL issues in Vite
 pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
 
-// Polyfill for PDF.js rendering in Worker environment
-// PDF.js expects a DOMCanvasFactory to create canvas elements
-// In a worker, we need to use OffscreenCanvas
 class OffscreenCanvasFactory {
   create(width: number, height: number) {
-    if (width <= 0 || height <= 0) {
-      throw new Error("Invalid canvas size");
-    }
+    if (width <= 0 || height <= 0) throw new Error("Invalid canvas size");
     const canvas = new OffscreenCanvas(width, height);
-    // PDF.js might try to access style or tagName
-    (canvas as any).style = {
-      width: `${width}px`,
-      height: `${height}px`,
-    };
+    (canvas as any).style = { width: `${width}px`, height: `${height}px` };
     (canvas as any).tagName = 'CANVAS';
-    (canvas as any).addEventListener = (type: string, listener: any) => {};
-    (canvas as any).removeEventListener = (type: string, listener: any) => {};
-    
+    (canvas as any).addEventListener = () => {};
+    (canvas as any).removeEventListener = () => {};
     const context = canvas.getContext("2d");
     return {
       canvas,
@@ -96,53 +62,312 @@ class OffscreenCanvasFactory {
       },
     };
   }
-
   reset(canvasAndContext: any, width: number, height: number) {
     canvasAndContext.canvas.width = width;
     canvasAndContext.canvas.height = height;
   }
-
   destroy(canvasAndContext: any) {
-    canvasAndContext.canvas.width = 0;
-    canvasAndContext.canvas.height = 0;
     canvasAndContext.canvas = null;
     canvasAndContext.context = null;
   }
 }
 
+// Helper to extract Separators from OPS
+async function extractSeparators(page: any, viewport: any) {
+  const separators: any[] = [];
+  try {
+    const opList = await page.getOperatorList();
+    const { OPS } = pdfjsLib;
+    
+    // Track State
+    let currentX = 0, currentY = 0;
+    
+    // We only care about strokes (lines/rects)
+    // Simplified: Find explicit rectangle/line ops
+    
+    for (let i = 0; i < opList.fnArray.length; i++) {
+      const fn = opList.fnArray[i];
+      const args = opList.argsArray[i];
+
+      if (fn === OPS.constructPath) {
+        const ops = args[0];
+        const vals = args[1];
+        let valIdx = 0;
+        let startX = 0, startY = 0;
+
+        for (let j = 0; j < ops.length; j++) {
+           const op = ops[j];
+           if (op === OPS.moveTo) {
+              startX = vals[valIdx++];
+              startY = vals[valIdx++];
+           } else if (op === OPS.lineTo) {
+              const endX = vals[valIdx++];
+              const endY = vals[valIdx++];
+              
+              // Is it horizontal or vertical?
+              const isH = Math.abs(startY - endY) < 2;
+              const isV = Math.abs(startX - endX) < 2;
+              
+              if (isH || isV) {
+                // Convert to Viewport Coords
+                // Note: We need the CTM (Current Transform Matrix) strictly speaking,
+                // but usually constructPath args are in user space.
+                
+                // transform to viewport
+                const p1 = viewport.convertToViewportPoint(startX, startY);
+                const p2 = viewport.convertToViewportPoint(endX, endY);
+                
+                // Box
+                const x = Math.min(p1[0], p2[0]);
+                const y = Math.min(p1[1], p2[1]);
+                const w = Math.abs(p1[0] - p2[0]) + 1; // min width 1
+                const h = Math.abs(p1[1] - p2[1]) + 1;
+
+                // Filter tiny noise
+                if (isH && w > 50) {
+                   separators.push({ type: 'line', box: [x, y, w, h], orientation: 'horizontal' });
+                } else if (isV && h > 50) {
+                   separators.push({ type: 'line', box: [x, y, w, h], orientation: 'vertical' });
+                }
+              }
+              startX = endX; startY = endY;
+           }
+        }
+      } else if (fn === OPS.rectangle) {
+         const [x, y, w, h] = args;
+         // Convert
+         const p = viewport.convertToViewportRectangle([x, y, x+w, y+h]);
+         const box = [p[0], p[1], p[2]-p[0], p[3]-p[1]]; // [x, y, w, h]
+         
+         // Only treat as separator if thin (line)
+         if (box[2] < 5 && box[3] > 50) {
+             separators.push({ type: 'line', box, orientation: 'vertical' });
+         } else if (box[3] < 5 && box[2] > 50) {
+             separators.push({ type: 'line', box, orientation: 'horizontal' });
+         }
+      }
+    }
+  } catch(e) { console.warn('Vector extraction failed', e); }
+  return separators;
+}
+
+// Helper to extract images from PDF page by rendering to canvas
+async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
+  const images: ImageBlock[] = [];
+  
+  try {
+    const opList = await page.getOperatorList();
+    const { OPS } = pdfjsLib;
+    
+    // Track transforms and image positions
+    let transformStack: number[][] = [[viewport.transform[0], viewport.transform[1], viewport.transform[2], viewport.transform[3], viewport.transform[4], viewport.transform[5]]];
+    let imageIndex = 0;
+    const imagePositions: { name: string; transform: number[] }[] = [];
+    
+    // First pass: collect all image operations with their transforms
+    for (let i = 0; i < opList.fnArray.length; i++) {
+      const fn = opList.fnArray[i];
+      const args = opList.argsArray[i];
+      
+      if (fn === OPS.save) {
+        transformStack.push([...transformStack[transformStack.length - 1]]);
+      } else if (fn === OPS.restore) {
+        if (transformStack.length > 1) transformStack.pop();
+      } else if (fn === OPS.transform) {
+        // Store current transform
+        const [a, b, c, d, e, f] = args;
+        transformStack[transformStack.length - 1] = [a, b, c, d, e, f];
+      } else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
+        const imgName = args[0];
+        imagePositions.push({
+          name: typeof imgName === 'string' ? imgName : `inline-${imageIndex}`,
+          transform: [...transformStack[transformStack.length - 1]]
+        });
+      }
+    }
+    
+    console.log(`  🔍 Found ${imagePositions.length} image operations`);
+    
+    // Second pass: Extract each image
+    for (const imgPos of imagePositions) {
+      try {
+        let imgObj: any = null;
+        
+        // Try to get from page objects
+        if (imgPos.name.startsWith('inline-')) {
+          // Inline images are harder - skip for now
+          console.log(`  ⚠️ Skipping inline image: ${imgPos.name}`);
+          continue;
+        }
+        
+        // Get image object - it might be a promise
+        try {
+          imgObj = await new Promise((resolve, reject) => {
+            page.objs.get(imgPos.name, (obj: any) => {
+              if (obj) resolve(obj);
+              else reject(new Error('Image not found'));
+            });
+          });
+        } catch {
+          // Try alternative method
+          imgObj = page.objs._objs?.get(imgPos.name)?.data;
+        }
+        
+        if (!imgObj) {
+          console.log(`  ⚠️ Could not get image object: ${imgPos.name}`);
+          continue;
+        }
+        
+        const imgWidth = imgObj.width || 100;
+        const imgHeight = imgObj.height || 100;
+        
+        console.log(`  📷 Processing image: ${imgPos.name} (${imgWidth}x${imgHeight})`);
+        
+        // Create canvas and render image
+        const canvas = new OffscreenCanvas(imgWidth, imgHeight);
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) continue;
+        
+        let blob: Blob | null = null;
+        
+        // Check if it's already a bitmap or has bitmap property
+        if (imgObj.bitmap) {
+          ctx.drawImage(imgObj.bitmap, 0, 0);
+          blob = await canvas.convertToBlob({ type: 'image/png' });
+        } else if (imgObj.data) {
+          // Raw pixel data
+          const imageData = ctx.createImageData(imgWidth, imgHeight);
+          const dataLen = imgObj.data.length;
+          const pixelCount = imgWidth * imgHeight;
+          
+          if (dataLen === pixelCount * 4) {
+            // RGBA
+            imageData.data.set(imgObj.data);
+          } else if (dataLen === pixelCount * 3) {
+            // RGB -> RGBA
+            for (let j = 0; j < pixelCount; j++) {
+              imageData.data[j * 4] = imgObj.data[j * 3];
+              imageData.data[j * 4 + 1] = imgObj.data[j * 3 + 1];
+              imageData.data[j * 4 + 2] = imgObj.data[j * 3 + 2];
+              imageData.data[j * 4 + 3] = 255;
+            }
+          } else if (dataLen === pixelCount) {
+            // Grayscale
+            for (let j = 0; j < pixelCount; j++) {
+              const v = imgObj.data[j];
+              imageData.data[j * 4] = v;
+              imageData.data[j * 4 + 1] = v;
+              imageData.data[j * 4 + 2] = v;
+              imageData.data[j * 4 + 3] = 255;
+            }
+          } else {
+            console.log(`  ⚠️ Unknown data format: ${dataLen} bytes for ${pixelCount} pixels`);
+            continue;
+          }
+          
+          ctx.putImageData(imageData, 0, 0);
+          blob = await canvas.convertToBlob({ type: 'image/png' });
+        } else if (imgObj instanceof ImageBitmap) {
+          ctx.drawImage(imgObj, 0, 0);
+          blob = await canvas.convertToBlob({ type: 'image/png' });
+        } else {
+          console.log(`  ⚠️ Unknown image format for: ${imgPos.name}`, Object.keys(imgObj));
+          continue;
+        }
+        
+        if (!blob || blob.size === 0) {
+          console.log(`  ⚠️ Failed to create blob for: ${imgPos.name}`);
+          continue;
+        }
+        
+        // Calculate position from transform
+        // Transform is [scaleX, skewY, skewX, scaleY, translateX, translateY]
+        const [a, b, c, d, e, f] = imgPos.transform;
+        
+        // The transform scales the 1x1 unit square to the image dimensions
+        // Position is at (e, f) in PDF coordinates
+        const pdfX = e;
+        const pdfY = f;
+        const pdfWidth = Math.abs(a) || imgWidth;
+        const pdfHeight = Math.abs(d) || imgHeight;
+        
+        // Convert to viewport coordinates
+        const vpX = pdfX;
+        const vpY = viewport.height - pdfY - pdfHeight; // Flip Y
+        
+        // Convert to percentages
+        const xPercent = (vpX / viewport.width) * 100;
+        const yPercent = (vpY / viewport.height) * 100;
+        const wPercent = (pdfWidth / viewport.width) * 100;
+        const hPercent = (pdfHeight / viewport.height) * 100;
+        
+        images.push({
+          id: `img-${Date.now()}-${imageIndex}`,
+          type: 'image',
+          box: [
+            Math.max(0, Math.min(100, xPercent)),
+            Math.max(0, Math.min(100, yPercent)),
+            Math.max(5, Math.min(100, wPercent)),
+            Math.max(5, Math.min(100, hPercent))
+          ],
+          blob,
+          mimeType: 'image/png',
+          rotation: 0
+        });
+        
+        console.log(`  ✅ Image ${imageIndex + 1}: ${imgPos.name} at [${xPercent.toFixed(1)}%, ${yPercent.toFixed(1)}%] size [${wPercent.toFixed(1)}%x${hPercent.toFixed(1)}%]`);
+        imageIndex++;
+        
+      } catch (imgErr) {
+        console.warn(`  ⚠️ Error processing image ${imgPos.name}:`, imgErr);
+      }
+    }
+  } catch (e) {
+    console.warn('Image extraction failed:', e);
+  }
+  
+  console.log(`  → ${images.length} images successfully extracted`);
+  return images;
+}
+
+// Logging helper for detailed extraction info
+function logExtractionStats(pageNum: number, stats: {
+  textItems: number;
+  runs: number;
+  lines: number;
+  paragraphs: number;
+  blocks: number;
+  images: number;
+  separators: number;
+}) {
+  console.log(`\n📄 Page ${pageNum} Extraction Summary:`);
+  console.log(`   ├─ Raw text items: ${stats.textItems}`);
+  console.log(`   ├─ Normalized runs: ${stats.runs}`);
+  console.log(`   ├─ Lines detected: ${stats.lines}`);
+  console.log(`   ├─ Paragraphs grouped: ${stats.paragraphs}`);
+  console.log(`   ├─ Text blocks created: ${stats.blocks}`);
+  console.log(`   ├─ Images found: ${stats.images}`);
+  console.log(`   └─ Separators (lines/rules): ${stats.separators}`);
+}
+
 self.onmessage = async (event: MessageEvent) => {
   const { fileBuffer } = event.data as { fileBuffer: ArrayBuffer };
 
-  if (!fileBuffer) {
-    self.postMessage({
-      type: 'ERROR',
-      error: 'No file buffer provided'
-    });
-    return;
-  }
-
-  console.log(`Worker received file buffer. Size: ${fileBuffer.byteLength} bytes`);
-
-  if (fileBuffer.byteLength === 0) {
-    self.postMessage({
-      type: 'ERROR',
-      error: 'File buffer is empty'
-    });
+  if (!fileBuffer || fileBuffer.byteLength === 0) {
+    self.postMessage({ type: 'ERROR', error: 'File buffer empty' });
     return;
   }
 
   try {
-    // Load the document
-    // Ensure we pass a Uint8Array to PDF.js to avoid any ArrayBuffer issues
-    const data = new Uint8Array(fileBuffer);
+    // Stage 1: Opening PDF
+    self.postMessage({ type: 'STAGE', stage: 'opening', message: 'Opening PDF document...' });
     
+    const data = new Uint8Array(fileBuffer);
     const loadingTask = pdfjsLib.getDocument({ 
       data,
-      // We might need to point to standard font data if we want to render, 
-      // but for text extraction it's usually fine.
       cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.394/cmaps/',
       cMapPacked: true,
-      // Force usage of the provided data
       disableAutoFetch: true,
       disableStream: true,
     });
@@ -150,271 +375,146 @@ self.onmessage = async (event: MessageEvent) => {
     const pdf = await loadingTask.promise;
     const pages: HydratedPage[] = [];
 
-    // Process each page
+    // Stage 2: Global Analysis
+    self.postMessage({ type: 'STAGE', stage: 'scanning', message: `Scanning ${pdf.numPages} pages for structure...` });
+    self.postMessage({ type: 'PROGRESS', progress: 5 });
+    
+    const allPageRuns = [];
+    const sampleLimit = Math.min(pdf.numPages, 10);
+    
+    for (let i = 1; i <= sampleLimit; i++) {
+       const page = await pdf.getPage(i);
+       const viewport = page.getViewport({ scale: 1.0 });
+       const textContent = await page.getTextContent();
+       const runs = normalizeTextItemsToRuns(textContent.items, viewport);
+       allPageRuns.push(runs);
+    }
+    const globalStats = calculateGlobalStats(allPageRuns);
+    
+    // Stage 3: AI Initialization
+    self.postMessage({ type: 'STAGE', stage: 'ai-init', message: 'Loading AI models...' });
+    self.postMessage({ type: 'PROGRESS', progress: 15 });
+    
+    try {
+      await semanticAnalyzer.init();
+      aiAvailable = true;
+      self.postMessage({ type: 'STAGE', stage: 'ai-ready', message: 'AI models loaded successfully' });
+    } catch (e) {
+      aiAvailable = false;
+      self.postMessage({ type: 'STAGE', stage: 'ai-skip', message: 'AI unavailable, using heuristics' });
+      console.warn('AI Init failed, falling back to heuristics', e);
+    }
+
+    // Stage 4: Extracting Content
+    self.postMessage({ type: 'STAGE', stage: 'extracting', message: 'Extracting text and layout...' });
+    self.postMessage({ type: 'PROGRESS', progress: 20 });
+
+    // --- PASS 2: HYDRATION ---
     for (let i = 1; i <= pdf.numPages; i++) {
+      // Per-page progress message
+      self.postMessage({ 
+        type: 'STAGE', 
+        stage: 'extracting-page', 
+        message: `Extracting page ${i} of ${pdf.numPages}...`,
+        pageNum: i,
+        totalPages: pdf.numPages
+      });
+      
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale: 1.0 });
       const textContent = await page.getTextContent();
-
-      // --- HEURISTICS PIPELINE ---
       
-      // 1. Normalize
+      // Extract text runs
       const runs = normalizeTextItemsToRuns(textContent.items, viewport);
       
-      // 1.5 Analyze Font Statistics
-      const stats = analyzeFontStatistics(runs);
+      // Extract Vectors (Separators/Lines)
+      const separators = await extractSeparators(page, viewport);
+      
+      // Extract Images
+      const images = await extractImages(page, viewport);
 
-      // 2. Group into lines
-      const lines = groupRunsIntoLines(runs, stats);
+      // Analyze Layout with smart algorithm
+      self.postMessage({ type: 'STAGE', stage: 'analyzing', message: `Analyzing layout for page ${i}...` });
+      let blocks = analyzePageLayout(runs, separators, { width: viewport.width, height: viewport.height }, globalStats);
       
-      // 3. Detect columns
-      const linesWithColumns = detectColumns(lines, viewport.width);
-
-      // 3.5 Detect Tables
-      const { tables, remainingLines } = detectTables(linesWithColumns, { width: viewport.width, height: viewport.height }, stats);
+      // Add images to blocks
+      blocks = [...blocks, ...images];
       
-      // 4. Group into paragraphs
-      const paragraphs = groupLinesIntoParagraphs(remainingLines, stats);
+      // Log detailed extraction stats
+      logExtractionStats(i, {
+        textItems: textContent.items.length,
+        runs: runs.length,
+        lines: blocks.filter(b => b.type === 'text').length, // Approximate
+        paragraphs: blocks.filter(b => b.type === 'text').length,
+        blocks: blocks.filter(b => b.type === 'text').length,
+        images: images.length,
+        separators: separators.length
+      });
       
-      // 5. Convert to blocks
-      const textBlocks = paragraphsToBlocks(paragraphs, { width: viewport.width, height: viewport.height }, stats);
-      
-      // 6. Extract Images
-      const imageBlocks: ImageBlock[] = [];
-      try {
-        const opList = await page.getOperatorList();
-        const { OPS } = pdfjsLib;
-        
-        // Iterate through operators to find images
-        for (let j = 0; j < opList.fnArray.length; j++) {
-          const fn = opList.fnArray[j];
-          const args = opList.argsArray[j];
-          
-          if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
-            const imgName = args[0];
-            
-            // Find the transform matrix for this image
-            // We need to look backwards for the last 'dependency' or 'transform'
-            // But actually, the current transformation matrix (CTM) is what matters.
-            // Tracking CTM manually is hard.
-            // A simpler heuristic: 
-            // Images are usually preceded by a 'transform' (OPS.transform) or 'cm' (OPS.concatenateMatrix)
-            // Let's look for the nearest preceding transform
-            
-            let transform = [1, 0, 0, 1, 0, 0]; // Identity
-            
-            // Scan backwards for transform
-            for (let k = j - 1; k >= 0; k--) {
-              if (opList.fnArray[k] === OPS.transform) {
-                transform = opList.argsArray[k];
-                break;
-              }
-            }
-            
-            // Calculate bounding box from transform
-            // Image space is 0..1 x 0..1
-            // Transform maps it to user space
-            // [scaleX, skewY, skewX, scaleY, translateX, translateY]
-            
-            // We need to project (0,0), (1,0), (0,1), (1,1) to find the bounds
-            const p0 = { x: transform[4], y: transform[5] };
-            const p1 = { x: transform[0] + transform[4], y: transform[1] + transform[5] };
-            const p2 = { x: transform[2] + transform[4], y: transform[3] + transform[5] };
-            const p3 = { x: transform[0] + transform[2] + transform[4], y: transform[1] + transform[3] + transform[5] };
-            
-            const xs = [p0.x, p1.x, p2.x, p3.x];
-            const ys = [p0.y, p1.y, p2.y, p3.y];
-            
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = Math.min(...ys);
-            const maxY = Math.max(...ys);
-            
-            // Convert to viewport coordinates (flip Y)
-            // PDF Y is bottom-up, Viewport Y is top-down
-            // We can use viewport.convertToViewportRectangle? No, that's for rects.
-            // Let's manually flip.
-            
-            const x = minX;
-            const y = viewport.viewBox[3] - maxY; // Flip Y
-            const w = maxX - minX;
-            const h = maxY - minY;
-            
-            // Convert to %
-            const box: [number, number, number, number] = [
-              (x / viewport.width) * 100,
-              (y / viewport.height) * 100,
-              (w / viewport.width) * 100,
-              (h / viewport.height) * 100
-            ];
-            
-            // Filter out tiny images (likely artifacts)
-            if (w < 5 || h < 5) continue;
-
-            // We don't have the image blob yet.
-            // We will extract it from the rendered canvas later.
-            imageBlocks.push({
-              id: `img-${j}-${Date.now()}`,
-              type: 'image',
-              box,
-              blob: new Blob(), // Placeholder, will fill later
-              mimeType: 'image/png',
-              rotation: 0
-            });
-          }
+      // Log individual blocks for debugging
+      console.log(`\n📦 Blocks on Page ${i}:`);
+      blocks.forEach((b, idx) => {
+        if (b.type === 'text') {
+          const preview = b.html?.substring(0, 50).replace(/\n/g, ' ') || '';
+          console.log(`   [${idx}] 📝 Text: "${preview}${b.html && b.html.length > 50 ? '...' : ''}" @ [${b.box.map(n => n.toFixed(1)).join(', ')}]`);
+        } else if (b.type === 'image') {
+          const imgBlock = b as ImageBlock;
+          console.log(`   [${idx}] 🖼️  Image: ${imgBlock.id} (${imgBlock.blob?.size || 0} bytes) @ [${b.box.map(n => n.toFixed(1)).join(', ')}]`);
         }
-      } catch (e) {
-        console.warn('Error extracting images:', e);
+      });
+
+      // AI Refinement (only if AI loaded successfully)
+      if (aiAvailable && blocks.length > 0) {
+        self.postMessage({ type: 'STAGE', stage: 'ai-processing', message: `AI refining page ${i}...` });
+        try {
+          const aiPromises = blocks.map(async (b) => {
+            if (b.type === 'text' && b.html.length < 50) {
+               const score = await semanticAnalyzer.getSimilarity(b.html, "Figure 1 description");
+               if (score > 0.4) {
+                  b.meta.isCaption = true;
+                  b.styles.color = '#555555';
+                  b.styles.fontSize = Math.min(b.styles.fontSize, 10);
+                  b.styles.italic = true;
+               }
+            }
+            return b;
+          });
+          blocks = await Promise.all(aiPromises);
+        } catch (e) {
+          console.warn('AI Refinement error:', e);
+        }
       }
 
-      // 7. Compute page stats
-      const avgFontSize = runs.length > 0 
-        ? runs.reduce((sum, r) => sum + r.fontSize, 0) / runs.length 
-        : 0;
-
-      // 8. Render Background & Extract Images
-      let backgroundBlob: Blob | null = null;
-      let finalImageBlocks: ImageBlock[] = []; // Images that are successfully extracted and valid
-
-      try {
-        // Create OffscreenCanvas
-        const canvas = new OffscreenCanvas(viewport.width, viewport.height);
-        const ctx = canvas.getContext('2d');
-        
-        if (ctx) {
-          // Render PDF page to canvas
-          await page.render({
-            canvasContext: ctx,
-            viewport,
-            intent: 'print',
-            canvasFactory: new OffscreenCanvasFactory() as any
-          } as any).promise;
-
-          // Extract Image Blobs
-          // Filter out images that are empty or white
-          
-          for (const imgBlock of imageBlocks) {
-            const [xPercent, yPercent, wPercent, hPercent] = imgBlock.box;
-            const x = Math.floor((xPercent / 100) * viewport.width);
-            const y = Math.floor((yPercent / 100) * viewport.height);
-            const w = Math.ceil((wPercent / 100) * viewport.width);
-            const h = Math.ceil((hPercent / 100) * viewport.height);
-            
-            if (w > 0 && h > 0) {
-              try {
-                const imgData = ctx.getImageData(x, y, w, h);
-                
-                // Check if image is empty/transparent/white
-                let hasContent = false;
-                const data = imgData.data;
-                for (let k = 0; k < data.length; k += 4) {
-                  const r = data[k];
-                  const g = data[k+1];
-                  const b = data[k+2];
-                  const a = data[k+3];
-                  
-                  // If not transparent and not white
-                  if (a > 0 && (r < 250 || g < 250 || b < 250)) {
-                    hasContent = true;
-                    break;
-                  }
-                }
-
-                if (hasContent) {
-                  const imgCanvas = new OffscreenCanvas(w, h);
-                  const imgCtx = imgCanvas.getContext('2d');
-                  if (imgCtx) {
-                    imgCtx.putImageData(imgData, 0, 0);
-                    const blob = await imgCanvas.convertToBlob({ type: 'image/png' });
-                    imgBlock.blob = blob;
-                    finalImageBlocks.push(imgBlock);
-                  }
-                }
-              } catch (err) {
-                console.warn('Failed to extract image blob', err);
-              }
-            }
-          }
-          
-          // Erase text regions (Paint Separator)
-          ctx.fillStyle = '#FFFFFF';
-          
-          // Erase standard text blocks
-          textBlocks.forEach(block => {
-            const [xPercent, yPercent, wPercent, hPercent] = block.box;
-            const x = (xPercent / 100) * viewport.width;
-            const y = (yPercent / 100) * viewport.height;
-            const w = (wPercent / 100) * viewport.width;
-            const h = (hPercent / 100) * viewport.height;
-            
-            const padding = 2;
-            ctx.fillRect(x - padding, y - padding, w + (padding * 2), h + (padding * 2));
-          });
-
-          // Erase table content (Full Block Erasure)
-          // We erase the entire table area to remove the original grid lines
-          // The UI will render new borders
-          tables.forEach(table => {
-            const [xPercent, yPercent, wPercent, hPercent] = table.box;
-            const x = (xPercent / 100) * viewport.width;
-            const y = (yPercent / 100) * viewport.height;
-            const w = (wPercent / 100) * viewport.width;
-            const h = (hPercent / 100) * viewport.height;
-            
-            // Add padding to ensure we catch the outer borders
-            const padding = 2;
-            ctx.fillRect(x - padding, y - padding, w + (padding * 2), h + (padding * 2));
-          });
-          
-          // Erase image regions from background
-          finalImageBlocks.forEach(block => {
-             const [xPercent, yPercent, wPercent, hPercent] = block.box;
-            const x = (xPercent / 100) * viewport.width;
-            const y = (yPercent / 100) * viewport.height;
-            const w = (wPercent / 100) * viewport.width;
-            const h = (hPercent / 100) * viewport.height;
-            
-            // No padding for images, exact cut
-            ctx.fillRect(x, y, w, h);
-          });
-
-          // Convert to Blob
-          backgroundBlob = await canvas.convertToBlob({ type: 'image/png' });
-        }
-      } catch (renderError) {
-        console.error('Background render error:', renderError);
-        // Continue without background if rendering fails
-      }
+      // Build Page
+      self.postMessage({ type: 'STAGE', stage: 'building', message: `Building editable page ${i}...` });
 
       pages.push({
         pageIndex: i - 1,
         dims: { width: viewport.width, height: viewport.height },
-        backgroundBlob,
-        blocks: [...textBlocks, ...finalImageBlocks, ...tables],
-        meta: {
-          lineHeightEstimate: null, // TODO
-          avgFontSize
+        backgroundBlob: null,
+        blocks: blocks,
+        meta: { 
+          lineHeightEstimate: globalStats.dominantLineHeight, 
+          avgFontSize: globalStats.dominantFontSize,
+          grid: {
+             columns: globalStats.masterGrid.columns,
+             margins: globalStats.masterGrid.margins
+          }
         }
       });
       
-      // Report progress
-      self.postMessage({
-        type: 'PROGRESS',
-        progress: Math.round((i / pdf.numPages) * 100)
-      });
+      // Progress: 20% for setup + 80% distributed across pages
+      const pageProgress = 20 + Math.round((i / pdf.numPages) * 75);
+      self.postMessage({ type: 'PROGRESS', progress: pageProgress });
     }
 
-    // Done
-    self.postMessage({
-      type: 'COMPLETE',
-      pages,
-    });
+    // Stage 5: Complete
+    self.postMessage({ type: 'STAGE', stage: 'complete', message: 'Document ready for editing!' });
+    self.postMessage({ type: 'PROGRESS', progress: 100 });
+
+    self.postMessage({ type: 'COMPLETE', pages });
     
   } catch (error) {
-    console.error('Hydration worker error:', error);
-    self.postMessage({
-      type: 'ERROR',
-      error: (error as Error).message || 'Unknown worker error',
-    });
+    self.postMessage({ type: 'ERROR', error: (error as Error).message });
   }
 };

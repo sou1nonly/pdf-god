@@ -1,19 +1,166 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Button } from '@/components/ui/button';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCw,
-  Download,
-  Loader2
-} from 'lucide-react';
+// Import worker directly from the installed package to ensure version match
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import './pdf-viewer.css';
 
-// Configure PDF.js worker - using local bundled worker to avoid CORS issues
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+
+interface PDFPageProps {
+  pageNumber: number;
+  pdfDocument: any;
+  scale: number;
+  rotation: number;
+  onInView: (pageNumber: number) => void;
+}
+
+const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPageProps) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
+  const annotationLayerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [rendering, setRendering] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  // Intersection Observer to detect visibility
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            onInView(pageNumber);
+          } else {
+            setIsVisible(false);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [pageNumber, onInView]);
+
+  // Render Page
+  useEffect(() => {
+    if (!pdfDocument || !canvasRef.current || !isVisible) return;
+
+    const renderPage = async () => {
+      try {
+        setRendering(true);
+        const page = await pdfDocument.getPage(pageNumber);
+        const canvas = canvasRef.current!;
+        const context = canvas.getContext('2d')!;
+
+        const viewport = page.getViewport({
+          scale: scale,
+          rotation: rotation,
+        });
+
+        setDimensions({ width: viewport.width, height: viewport.height });
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+        };
+
+        await page.render(renderContext).promise;
+
+        // Render Text Layer
+        if (textLayerRef.current) {
+          textLayerRef.current.innerHTML = '';
+          textLayerRef.current.style.height = `${viewport.height}px`;
+          textLayerRef.current.style.width = `${viewport.width}px`;
+          
+          const textContent = await page.getTextContent();
+          const textLayer = new pdfjsLib.TextLayer({
+            textContentSource: textContent,
+            container: textLayerRef.current,
+            viewport: viewport
+          });
+          await textLayer.render();
+        }
+
+        // Render Annotation Layer
+        if (annotationLayerRef.current) {
+          annotationLayerRef.current.innerHTML = '';
+          annotationLayerRef.current.style.height = `${viewport.height}px`;
+          annotationLayerRef.current.style.width = `${viewport.width}px`;
+
+          const annotations = await page.getAnnotations();
+          const annotationLayer = new pdfjsLib.AnnotationLayer({
+             div: annotationLayerRef.current,
+             viewport: viewport.clone({ dontFlip: true }),
+             page: page,
+             accessibilityManager: null,
+             annotationCanvasMap: null,
+             annotationEditorUIManager: null,
+             structTreeLayer: null,
+             commentManager: null,
+             linkService: null,
+             annotationStorage: null
+          });
+          await annotationLayer.render({
+            annotations,
+            viewport: viewport.clone({ dontFlip: true }),
+            div: annotationLayerRef.current,
+            page: page,
+            linkService: null,
+            downloadManager: null,
+            renderForms: true,
+          });
+        }
+
+        setRendering(false);
+      } catch (error) {
+        console.error(`Error rendering page ${pageNumber}:`, error);
+        setRendering(false);
+      }
+    };
+
+    renderPage();
+  }, [pdfDocument, pageNumber, scale, rotation, isVisible]);
+
+  return (
+    <div 
+      ref={containerRef}
+      className="relative bg-white shadow-md mb-4 transition-all duration-200"
+      style={{ 
+        width: dimensions.width || 'auto', 
+        height: dimensions.height || 'auto',
+        minHeight: '800px', // Placeholder height
+        minWidth: '600px'
+      }}
+      id={`page-${pageNumber}`}
+    >
+      {rendering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-50">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      )}
+      <canvas ref={canvasRef} className="block" />
+      <div ref={textLayerRef} className="textLayer" />
+      <div ref={annotationLayerRef} className="annotationLayer" />
+      
+      {/* Page Number Indicator */}
+      <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+        {pageNumber}
+      </div>
+    </div>
+  );
+};
 
 interface PDFViewerProps {
   url?: string;
@@ -21,6 +168,11 @@ interface PDFViewerProps {
   initialZoom?: number;
   onPageChange?: (page: number) => void;
   onZoomChange?: (zoom: number) => void;
+  scale?: number;
+  currentPage?: number;
+  totalPages?: number;
+  onDocumentLoad?: (pdf: any) => void;
+  rotation?: number;
 }
 
 export const PDFViewer = ({
@@ -29,15 +181,23 @@ export const PDFViewer = ({
   initialZoom = 100,
   onPageChange,
   onZoomChange,
+  scale,
+  currentPage: externalCurrentPage,
+  totalPages: externalTotalPages,
+  onDocumentLoad,
+  rotation: externalRotation = 0
 }: PDFViewerProps) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [zoom, setZoom] = useState(initialZoom);
-  const [rotation, setRotation] = useState(0);
+  const [internalTotalPages, setInternalTotalPages] = useState(0);
+  const [rotation, setRotation] = useState(externalRotation);
   const [loading, setLoading] = useState(true);
-  const [rendering, setRendering] = useState(false);
+  const internalPageRef = useRef(1);
+
+  useEffect(() => {
+    setRotation(externalRotation);
+  }, [externalRotation]);
+  
+  const zoom = scale ? scale / 100 : (initialZoom / 100);
 
   // Load PDF document
   useEffect(() => {
@@ -57,11 +217,14 @@ export const PDFViewer = ({
 
         const pdf = await loadingTask.promise;
         setPdfDocument(pdf);
-        setTotalPages(pdf.numPages);
+        setInternalTotalPages(pdf.numPages);
+        if (onDocumentLoad) onDocumentLoad(pdf);
         setLoading(false);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading PDF:', error);
-        toast.error('Failed to load PDF');
+        toast.error('Failed to load PDF', {
+          description: error.message || 'Unknown error occurred'
+        });
         setLoading(false);
       }
     };
@@ -69,85 +232,22 @@ export const PDFViewer = ({
     loadPDF();
   }, [url, file]);
 
-  // Render current page
+  // Handle scrolling to specific page
   useEffect(() => {
-    if (!pdfDocument || !canvasRef.current) return;
-
-    const renderPage = async () => {
-      try {
-        setRendering(true);
-        const page = await pdfDocument.getPage(currentPage);
-        const canvas = canvasRef.current!;
-        const context = canvas.getContext('2d')!;
-
-        // Calculate viewport with zoom and rotation
-        const viewport = page.getViewport({
-          scale: zoom / 100,
-          rotation: rotation,
-        });
-
-        // Set canvas dimensions
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
-        // Render PDF page
-        const renderContext = {
-          canvasContext: context,
-          viewport: viewport,
-        };
-
-        await page.render(renderContext).promise;
-        setRendering(false);
-      } catch (error) {
-        console.error('Error rendering page:', error);
-        toast.error('Failed to render page');
-        setRendering(false);
+    if (externalCurrentPage && !loading && externalCurrentPage !== internalPageRef.current) {
+      const pageElement = document.getElementById(`page-${externalCurrentPage}`);
+      if (pageElement) {
+        pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
-    };
-
-    renderPage();
-  }, [pdfDocument, currentPage, zoom, rotation]);
-
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-      onPageChange?.(page);
     }
-  };
+  }, [externalCurrentPage, loading]);
 
-  const handleZoomIn = () => {
-    const newZoom = Math.min(zoom + 25, 500);
-    setZoom(newZoom);
-    onZoomChange?.(newZoom);
-  };
-
-  const handleZoomOut = () => {
-    const newZoom = Math.max(zoom - 25, 25);
-    setZoom(newZoom);
-    onZoomChange?.(newZoom);
-  };
-
-  const handleRotate = () => {
-    setRotation((prev) => (prev + 90) % 360);
-  };
-
-  const handleDownload = () => {
-    if (url) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'document.pdf';
-      link.click();
-      toast.success('Download started');
-    } else if (file) {
-      const url = URL.createObjectURL(file);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file.name;
-      link.click();
-      URL.revokeObjectURL(url);
-      toast.success('Download started');
+  const handlePageInView = useCallback((pageNumber: number) => {
+    internalPageRef.current = pageNumber;
+    if (onPageChange) {
+      onPageChange(pageNumber);
     }
-  };
+  }, [onPageChange]);
 
   if (loading) {
     return (
@@ -172,90 +272,18 @@ export const PDFViewer = ({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-card">
-        {/* Navigation */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1 || rendering}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm font-medium min-w-[100px] text-center">
-            Page {currentPage} of {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => goToPage(currentPage + 1)}
-            disabled={currentPage >= totalPages || rendering}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Zoom Controls */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleZoomOut}
-            disabled={zoom <= 25 || rendering}
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <span className="text-sm font-medium min-w-[60px] text-center">
-            {zoom}%
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleZoomIn}
-            disabled={zoom >= 500 || rendering}
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleRotate}
-            disabled={rendering}
-          >
-            <RotateCw className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleDownload}
-          >
-            <Download className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Canvas Container */}
-      <div className="flex-1 overflow-auto bg-muted/30 p-8">
-        <div className="flex items-center justify-center min-h-full">
-          <div className="bg-white shadow-2xl rounded-lg overflow-hidden">
-            {rendering && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            )}
-            <canvas
-              ref={canvasRef}
-              className="block max-w-full h-auto"
-            />
-          </div>
-        </div>
+    <div className="flex-1 overflow-auto bg-muted/30 p-8 h-full">
+      <div className="flex flex-col items-center gap-4 min-h-full">
+        {Array.from({ length: internalTotalPages }, (_, i) => (
+          <PDFPage
+            key={i + 1}
+            pageNumber={i + 1}
+            pdfDocument={pdfDocument}
+            scale={zoom}
+            rotation={rotation}
+            onInView={handlePageInView}
+          />
+        ))}
       </div>
     </div>
   );

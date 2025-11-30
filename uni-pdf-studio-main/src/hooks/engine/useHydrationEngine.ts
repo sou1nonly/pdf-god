@@ -4,6 +4,27 @@ import HydrationWorker from '@/workers/hydration.worker?worker';
 
 type Status = 'idle' | 'processing' | 'complete' | 'error';
 
+export type ProcessingStage = 
+  | 'idle'
+  | 'opening'
+  | 'scanning'
+  | 'ai-init'
+  | 'ai-ready'
+  | 'ai-skip'
+  | 'extracting'
+  | 'extracting-page'
+  | 'analyzing'
+  | 'ai-processing'
+  | 'building'
+  | 'complete';
+
+export interface StageInfo {
+  stage: ProcessingStage;
+  message: string;
+  pageNum?: number;
+  totalPages?: number;
+}
+
 export type HydratedPageWithUrl = HydratedPage & { 
   backgroundUrl?: string;
   blocks: (HydratedPage['blocks'][0] & { imageUrl?: string })[];
@@ -14,12 +35,14 @@ export const useHydrationEngine = () => {
   const [pages, setPages] = useState<HydratedPageWithUrl[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [stageInfo, setStageInfo] = useState<StageInfo>({ stage: 'idle', message: '' });
   const workerRef = useRef<Worker | null>(null);
 
-  const processFile = useCallback(async (file: File) => {
+  const processFile = useCallback(async (file: File | Blob) => {
     setStatus('processing');
     setError(null);
     setProgress(0);
+    setStageInfo({ stage: 'opening', message: 'Initializing...' });
 
     // Terminate existing worker if any
     if (workerRef.current) {
@@ -32,7 +55,7 @@ export const useHydrationEngine = () => {
       workerRef.current = worker;
 
       worker.onmessage = (event: MessageEvent) => {
-        const { type, pages: resultPages, error: workerError, progress: workerProgress } = event.data;
+        const { type, pages: resultPages, error: workerError, progress: workerProgress, stage, message, pageNum, totalPages } = event.data;
         
         if (type === 'COMPLETE') {
           // Create Object URLs for background blobs and image blocks
@@ -53,15 +76,15 @@ export const useHydrationEngine = () => {
           setPages(pagesWithUrls);
           setStatus('complete');
           setProgress(100);
-          // Don't terminate immediately if we want to keep using it, 
-          // but for one-off processing it's fine.
-          // worker.terminate(); 
-          // workerRef.current = null;
+          setStageInfo({ stage: 'complete', message: 'Document ready for editing!' });
         } else if (type === 'ERROR') {
           setError(workerError);
           setStatus('error');
+          setStageInfo({ stage: 'idle', message: workerError });
         } else if (type === 'PROGRESS') {
           setProgress(workerProgress);
+        } else if (type === 'STAGE') {
+          setStageInfo({ stage, message, pageNum, totalPages });
         }
       };
 
@@ -69,6 +92,7 @@ export const useHydrationEngine = () => {
         console.error('Worker error:', err);
         setError('Worker initialization failed');
         setStatus('error');
+        setStageInfo({ stage: 'idle', message: 'Worker failed to initialize' });
       };
 
       const buffer = await file.arrayBuffer();
@@ -117,5 +141,68 @@ export const useHydrationEngine = () => {
     };
   }, [pages]);
 
-  return { processFile, pages, status, error, progress, reset };
+  const updateBlock = useCallback((pageIndex: number, blockId: string, newHtml: string) => {
+    setPages(currentPages => {
+      if (!currentPages) return null;
+      
+      return currentPages.map((page, idx) => {
+        if (idx !== pageIndex) return page;
+        
+        return {
+          ...page,
+          blocks: page.blocks.map(block => {
+            if (block.id === blockId && block.type === 'text') {
+              return { ...block, html: newHtml };
+            }
+            return block;
+          })
+        };
+      });
+    });
+  }, []);
+
+  const moveBlock = useCallback((pageIndex: number, blockId: string, newBox: [number, number, number, number]) => {
+    setPages(currentPages => {
+      if (!currentPages) return null;
+      
+      return currentPages.map((page, idx) => {
+        if (idx !== pageIndex) return page;
+        
+        return {
+          ...page,
+          blocks: page.blocks.map(block => {
+            if (block.id === blockId) {
+              return { ...block, box: newBox };
+            }
+            return block;
+          })
+        };
+      });
+    });
+  }, []);
+
+  const updateBlockStyles = useCallback((pageIndex: number, blockId: string, newStyles: Partial<any>) => {
+    setPages(currentPages => {
+      if (!currentPages) return null;
+      
+      return currentPages.map((page, idx) => {
+        if (idx !== pageIndex) return page;
+        
+        return {
+          ...page,
+          blocks: page.blocks.map(block => {
+            if (block.id === blockId && block.type === 'text') {
+              return { 
+                ...block, 
+                styles: { ...block.styles, ...newStyles } 
+              };
+            }
+            return block;
+          })
+        };
+      });
+    });
+  }, []);
+
+  return { processFile, pages, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles };
 };

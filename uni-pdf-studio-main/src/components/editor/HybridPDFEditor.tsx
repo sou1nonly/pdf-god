@@ -1,168 +1,148 @@
-/**
- * HybridPDFEditor - New Native Approach
- * 
- * Combines:
- * - Layer 1: Native PDF Viewer (Chrome's built-in)
- * - Layer 2: Text Extraction (lazy-loaded)
- * - Layer 3: Editable Overlays (TipTap)
- * - Layer 4: Save Manager (flatten/stamp)
- */
-
-import { useState, useEffect, useMemo } from 'react';
-import { NativePDFViewer } from './NativePDFViewer';
-import { useTextExtraction } from '@/hooks/useTextExtraction';
-import { detectTextBlocks } from '@/lib/textDetection';
-import type { TextBlock } from '@/types';
+import { useEffect, useRef } from 'react';
+import { useHydrationEngine } from '@/hooks/engine/useHydrationEngine';
+import { Loader2, AlertCircle, FileText, Sparkles } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { SmartRenderer } from '@/components/renderer/SmartRenderer';
 
 interface HybridPDFEditorProps {
-  /** PDF document URL */
   pdfUrl: string;
-  
-  /** Editor width */
-  width?: number;
-  
-  /** Editor height */
-  height?: number;
-  
-  /** Active tool */
-  activeTool?: 'select' | 'rectangle' | 'circle' | 'text' | 'highlight' | 'freehand';
-  
-  /** Callback when annotation is added */
-  onAnnotationAdded?: (annotation: any) => void;
-  
-  /** Callback when editor state changes */
-  onChange?: (state: any) => void;
-  
-  /** Additional CSS classes */
   className?: string;
+  // Kept for backward compatibility
+  width?: number; 
+  height?: number;
 }
 
 export function HybridPDFEditor({
   pdfUrl,
-  width = 800,
-  height = 1000,
-  activeTool = 'select',
-  onAnnotationAdded,
-  onChange,
   className,
 }: HybridPDFEditorProps) {
-  // Text extraction state
-  const [showTextBlocks, setShowTextBlocks] = useState(false);
-  const [detectedBlocks, setDetectedBlocks] = useState<TextBlock[]>([]);
-  
-  // Use text extraction hook (lazy loading)
-  const { textContent, isLoading, error, progress, extract } = useTextExtraction(pdfUrl, false);
+  // 1. Init Engine
+  const { processFile, pages, status, error, progress, message } = useHydrationEngine();
+  const processedUrlRef = useRef<string | null>(null);
 
-  /**
-   * Detect text blocks when text content changes
-   */
+  // 2. Fetch & Process PDF
   useEffect(() => {
-    if (textContent.size === 0) return;
-
-    console.log('[HybridPDFEditor] Processing text content...');
-    const allBlocks: TextBlock[] = [];
-
-    textContent.forEach((pageContent, pageNumber) => {
-      if (pageContent.runs.length > 0) {
-        const blocks = detectTextBlocks(pageContent.runs, pageNumber, {
-          detectColumns: true, // Enable column detection
-        });
-        allBlocks.push(...blocks);
+    const loadPdf = async () => {
+      // Prevent reprocessing the same URL
+      if (!pdfUrl || pdfUrl === processedUrlRef.current) return;
+      
+      try {
+        const res = await fetch(pdfUrl);
+        const blob = await res.blob();
+        const file = new File([blob], "document.pdf", { type: "application/pdf" });
+        
+        processedUrlRef.current = pdfUrl;
+        processFile(file);
+      } catch (err) {
+        console.error("Failed to load PDF:", err);
       }
-    });
+    };
 
-    console.log(`[HybridPDFEditor] Detected ${allBlocks.length} text blocks`);
-    setDetectedBlocks(allBlocks);
-  }, [textContent]);
+    loadPdf();
+  }, [pdfUrl, processFile]);
 
-  /**
-   * Handle text extraction toggle
-   */
-  const handleToggleTextDetection = async () => {
-    if (showTextBlocks) {
-      // Hide text blocks
-      setShowTextBlocks(false);
-    } else {
-      // Extract text and show blocks
-      if (textContent.size === 0) {
-        console.log('[HybridPDFEditor] Starting text extraction...');
-        await extract();
-      }
-      setShowTextBlocks(true);
-    }
-  };
-
+  // 3. Render States
   return (
-    <div className={`relative ${className || ''}`}>
-      {/* Layer 1: Native PDF Viewer */}
-      <NativePDFViewer
-        url={pdfUrl}
-        width={width}
-        height={height}
-        activeTool={activeTool}
-        onAnnotationAdded={onAnnotationAdded}
-      />
+    <div className={`relative flex flex-col h-full min-h-[500px] bg-slate-50/50 ${className || ''}`}>
+      
+      {/* A. Loading / Analyzing State */}
+      {(status === 'loading_model' || status === 'analyzing') && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm transition-all animate-in fade-in duration-300">
+          <div className="w-full max-w-md p-8 space-y-8 text-center">
+            <div className="relative mx-auto w-20 h-20">
+              <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-25"></div>
+              <div className="relative bg-white p-4 rounded-full shadow-sm border border-blue-50">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                {status === 'loading_model' ? 'Initializing AI Engine...' : 'Reconstructing Document'}
+              </h3>
+              <p className="text-sm text-gray-500 font-medium animate-pulse">
+                {message || 'Analyzing layout structure and semantics...'}
+              </p>
+            </div>
 
-      {/* Layer 2: Text Block Visualization (Debug Mode) */}
-      {showTextBlocks && (
-        <div className="absolute inset-0 pointer-events-none">
-          {detectedBlocks.map((block) => (
-            <div
-              key={block.id}
-              className="absolute border-2 border-blue-400 bg-blue-100 bg-opacity-20"
-              style={{
-                left: block.x,
-                top: block.y,
-                width: block.width,
-                height: block.height,
-              }}
-              title={`Block: ${block.text.substring(0, 50)}...`}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Text Extraction Progress */}
-      {isLoading && (
-        <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4">
-          <div className="text-sm font-medium mb-2">Extracting text...</div>
-          <div className="w-48 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="text-xs text-gray-500 mt-1">{progress}%</div>
-        </div>
-      )}
-
-      {/* Text Extraction Error */}
-      {error && (
-        <div className="absolute top-4 right-4 bg-red-50 border border-red-200 rounded-lg p-4 max-w-sm">
-          <div className="text-sm font-medium text-red-800 mb-1">Text extraction failed</div>
-          <div className="text-xs text-red-600">{error.message}</div>
-        </div>
-      )}
-
-      {/* Debug Toggle Button */}
-      <button
-        onClick={handleToggleTextDetection}
-        className="absolute bottom-4 right-4 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium shadow-sm transition-colors"
-        disabled={isLoading}
-      >
-        {isLoading ? 'Extracting...' : showTextBlocks ? 'Hide Text Blocks' : 'Detect Text'}
-      </button>
-
-      {/* Stats Display (Debug) */}
-      {showTextBlocks && detectedBlocks.length > 0 && (
-        <div className="absolute bottom-16 right-4 bg-white border border-gray-300 rounded-lg p-3 text-xs space-y-1 shadow-sm">
-          <div className="font-medium">Detection Stats:</div>
-          <div>Text Blocks: {detectedBlocks.length}</div>
-          <div>Pages: {textContent.size}</div>
-          <div className="text-gray-500 text-[10px] mt-2">
-            Click blocks to edit (coming soon)
+            {/* Progress Bar */}
+            <div className="space-y-2">
+              <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-600 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(37,99,235,0.3)]"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 px-1">
+                <span>Processing</span>
+                <span>{progress}%</span>
+              </div>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* B. Error State */}
+      {status === 'error' && (
+        <div className="flex items-center justify-center h-full">
+          <div className="max-w-md p-8 bg-white rounded-xl shadow-lg border border-red-100 text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Analysis Failed</h3>
+            <p className="text-gray-500 mb-8 leading-relaxed">{error || "Could not process this document. Please try a different file."}</p>
+            <Button onClick={() => window.location.reload()}>
+              Try Again
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* C. Success State (Phase 3: Smart Renderer) */}
+      {status === 'complete' && pages.length > 0 ? (
+        <ScrollArea className="flex-1 w-full h-full">
+          <div className="py-12 px-4 space-y-12">
+            
+            {/* AI Badge Header */}
+            <div className="max-w-[850px] mx-auto flex justify-between items-center pb-4 border-b border-gray-200/50">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-50 rounded-md">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                </div>
+                <span className="text-sm font-semibold text-gray-700">AI Layout Engine</span>
+              </div>
+              <div className="text-xs font-mono text-gray-400">
+                {pages.length} Pages Processed
+              </div>
+            </div>
+
+            {/* Render Pages */}
+            {pages.map((page) => (
+              <div key={page.pageNumber} className="relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-4">
+                 {/* Page Indicator */}
+                 <div className="absolute -left-4 xl:-left-16 top-0 text-xs font-mono text-slate-300 hidden md:block">
+                    P.{page.pageNumber}
+                 </div>
+                 
+                 {/* The Reconstructed Paper */}
+                 <SmartRenderer sections={page.sections} />
+              </div>
+            ))}
+
+            <div className="h-20" /> {/* Bottom padding */}
+          </div>
+        </ScrollArea>
+      ) : (
+        // Idle State
+        status === 'idle' && (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-4">
+            <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center">
+              <FileText className="w-10 h-10 text-gray-300" />
+            </div>
+            <p className="font-medium">Ready to process document</p>
+          </div>
+        )
       )}
     </div>
   );

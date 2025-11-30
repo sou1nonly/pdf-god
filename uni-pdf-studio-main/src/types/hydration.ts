@@ -16,10 +16,15 @@ export type HydratedPage = {
   // Semantic layer
   blocks: (TextBlock | ImageBlock | TableBlock)[];
 
-  // Raw stats useful for tuning heuristics
+  // Raw stats useful for tuning heuristics & UI guides
   meta: {
     lineHeightEstimate: number | null;
     avgFontSize: number | null;
+    // Added Grid Property to fix the error
+    grid?: {
+      columns: number[];
+      margins: { left: number; right: number };
+    };
   };
 };
 
@@ -43,7 +48,7 @@ export type TableRow = {
 
 export type TableCell = {
   content: string; // HTML
-  box: [number, number, number, number]; // [x%, y%, w%, h%] relative to page (or table? let's do page for simplicity of erasure)
+  box: [number, number, number, number]; // [x%, y%, w%, h%] relative to page
   styles: Partial<TextBlockStyles>; // Font size, weight, etc.
   colSpan?: number;
   rowSpan?: number;

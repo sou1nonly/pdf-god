@@ -239,3 +239,29 @@ export const saveFileMetadata = async (metadata: {
     return { success: false, error: error.message };
   }
 };
+
+/**
+ * Download a file from Supabase Storage as a Blob
+ * @param path - Path to the file in storage
+ * @param bucket - Storage bucket name
+ * @returns Blob or null
+ */
+export const downloadFile = async (
+  path: string,
+  bucket: string = DEFAULT_BUCKET
+): Promise<Blob | null> => {
+  try {
+    const { data, error } = await supabase.storage.from(bucket).download(path);
+
+    if (error) {
+      console.error("Download error:", error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Download exception:", error);
+    return null;
+  }
+};
+

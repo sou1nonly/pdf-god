@@ -60,7 +60,7 @@ const HomePage = () => {
           <div className="hidden md:flex items-center gap-4">
             {user ? (
               <>
-                <Button variant="ghost" onClick={() => navigate('/editor')}>
+                <Button variant="ghost" onClick={() => navigate('/documents')}>
                   My Documents
                 </Button>
                 <DropdownMenu>
@@ -84,7 +84,7 @@ const HomePage = () => {
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => navigate('/editor')}>
+                    <DropdownMenuItem onClick={() => navigate('/documents')}>
                       <FileText className="h-4 w-4 mr-2" />
                       My Documents
                     </DropdownMenuItem>

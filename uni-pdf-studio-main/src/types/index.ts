@@ -1,55 +1,15 @@
-/**
- * Type Definitions Index
- * 
- * Central export point for all TypeScript types used in the PDF editor.
- */
+// src/types/index.ts
 
-// Text extraction types
-export type {
-  TextRun,
-  TextLine,
-  TextBlock,
-  PageTextContent,
-  TextExtractionResult,
-  TextExtractionOptions,
-} from './textBlock';
+// Export new Semantic Types
+export * from './semantic';
+export * from './hydration';
 
-// Overlay types
-export type {
-  TextOverlay,
-  OverlayTransform,
-  SelectionState,
-  ResizeHandle,
-  SnapGuide,
-  SnapResult,
-  OverlayHistory,
-  EditorMode,
-  EditorSettings,
-} from './overlay';
-
-// Export types
-export type {
-  ExportMode,
-  ExportOptions,
-  ExportProgress,
-  ExportResult,
-  TextSegment,
-  StampedText,
-  FontInfo,
-  FontCache,
-  RenderOptions,
-  ImageExportOptions,
-  PDFMetadata,
-} from './pdfExport';
-
-// Editor state types
-export type {
-  EditorState,
-  EditorAction,
-  ViewportInfo,
-  KeyboardShortcut,
-  ContextMenuOption,
-  NotificationMessage,
-  PerformanceMetrics,
-  ErrorInfo,
-} from './editor';
+// Keep any other global types you might have (User, Auth, etc.)
+// but REMOVE exports like 'TextRun', 'TextBlock' if they were from textDetection.ts
+export interface Document {
+  id: string;
+  title: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+}
