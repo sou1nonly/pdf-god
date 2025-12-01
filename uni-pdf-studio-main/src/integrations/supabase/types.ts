@@ -6,15 +6,80 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+// Custom table types for our schema
+export interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Document {
+  id: string;
+  user_id: string;
+  title: string;
+  file_name: string | null;
+  file_size: number | null;
+  file_url: string | null;
+  storage_path: string | null;
+  thumbnail_url: string | null;
+  page_count: number;
+  status: 'draft' | 'published' | 'archived';
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Annotation {
+  id: string;
+  document_id: string;
+  user_id: string;
+  page_number: number;
+  type: 'comment' | 'highlight' | 'text' | 'drawing' | 'shape';
+  content: Json | null;
+  position: Json | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentVersion {
+  id: string;
+  document_id: string;
+  version_number: number;
+  file_url: string;
+  created_by: string;
+  created_at: string;
+}
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: Profile;
+        Insert: Omit<Profile, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string };
+        Update: Partial<Omit<Profile, 'id'>>;
+      };
+      documents: {
+        Row: Document;
+        Insert: Omit<Document, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string };
+        Update: Partial<Omit<Document, 'id' | 'user_id'>>;
+      };
+      annotations: {
+        Row: Annotation;
+        Insert: Omit<Annotation, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string };
+        Update: Partial<Omit<Annotation, 'id' | 'user_id' | 'document_id'>>;
+      };
+      document_versions: {
+        Row: DocumentVersion;
+        Insert: Omit<DocumentVersion, 'id' | 'created_at'> & { id?: string; created_at?: string };
+        Update: Partial<Omit<DocumentVersion, 'id'>>;
+      };
     }
     Views: {
       [_ in never]: never

@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 
 import * as pdfjsLib from 'pdfjs-dist';
-import PdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?worker';
 import { 
   normalizeTextItemsToRuns, 
   analyzePageLayout, 
@@ -42,7 +41,8 @@ if (typeof HTMLCanvasElement === 'undefined') (self as any).HTMLCanvasElement = 
 if (typeof requestAnimationFrame === 'undefined') (self as any).requestAnimationFrame = (cb: any) => setTimeout(cb, 0);
 if (typeof cancelAnimationFrame === 'undefined') (self as any).cancelAnimationFrame = (id: any) => clearTimeout(id);
 
-pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
+// Use jsdelivr CDN for PDF.js worker (has latest versions)
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 class OffscreenCanvasFactory {
   create(width: number, height: number) {

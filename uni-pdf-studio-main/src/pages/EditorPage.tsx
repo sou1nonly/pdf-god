@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { FileText, ZoomIn, ZoomOut, Upload, Eye, Edit, Sparkles } from "lucide-react";
+import { FileText, ZoomIn, ZoomOut, Upload, Eye, Edit } from "lucide-react";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftSidebar } from "@/components/layout/LeftSidebar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
@@ -10,10 +10,9 @@ import { HydratedPageView } from "@/components/editor/HydratedPageView";
 import { ProcessingOverlay } from "@/components/editor/ProcessingOverlay";
 import { CanvaToolbar } from "@/components/editor/CanvaToolbar";
 import { ColorPanel } from "@/components/editor/CanvaToolbar";
-import { AIAssistantPanel } from "@/components/ai/AIAssistantPanel";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
-import { useHistory } from "@/lib/editor/historyManager";
 import { extractTextFromPages } from "@/lib/ai/text-extraction";
+import { saveAnnotations, loadAnnotations } from "@/lib/annotations-service";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -48,11 +47,14 @@ const EditorPage = () => {
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [opacity, setOpacity] = useState(1);
   
-  // AI Assistant state
-  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // Annotations state - Map of pageIndex to fabric objects
+  const [pageAnnotations, setPageAnnotations] = useState<Map<number, any[]>>(new Map());
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
-  // History
-  const { canUndo, canRedo, undo, redo } = useHistory();
+  // Undo/Redo state for canvas - managed per-canvas via window.__drawingCanvas
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const { processFile, pages, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles } = useHydrationEngine();
 
@@ -71,6 +73,33 @@ const EditorPage = () => {
     setNumPages(pdf.numPages);
   };
 
+  // Handle drawing changes - track locally, no auto-save
+  const handleDrawingChange = useCallback((pageIndex: number, objects: any[]) => {
+    // Update local state immediately
+    setPageAnnotations(prev => {
+      const newMap = new Map(prev);
+      newMap.set(pageIndex, objects);
+      return newMap;
+    });
+    
+    // Mark as having unsaved changes
+    setHasUnsavedChanges(true);
+  }, []);
+  
+  // Handle undo/redo state changes from canvas
+  const handleHistoryChange = useCallback((canUndoNow: boolean, canRedoNow: boolean) => {
+    setCanUndo(canUndoNow);
+    setCanRedo(canRedoNow);
+  }, []);
+  
+  // Undo/Redo handlers that delegate to the canvas
+  const handleUndo = useCallback(() => {
+    (window as any).__drawingCanvas?.undo?.();
+  }, []);
+  
+  const handleRedo = useCallback(() => {
+    (window as any).__drawingCanvas?.redo?.();
+  }, []);
   // Fetch document on load
   useEffect(() => {
     const loadDocument = async () => {
@@ -102,6 +131,14 @@ const EditorPage = () => {
             
             // 3. Process for hydration (Edit mode)
             await processFile(blob);
+            
+            // 4. Load annotations from cloud
+            const { annotations, error: annotationsError } = await loadAnnotations(documentId);
+            if (!annotationsError && annotations.size > 0) {
+              setPageAnnotations(annotations);
+              console.log(`Loaded annotations for ${annotations.size} pages`);
+            }
+            
             toast.success("Document loaded successfully");
           } else {
             throw new Error("Failed to download file content");
@@ -143,8 +180,50 @@ const EditorPage = () => {
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 10, 500));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 10, 10));
 
-  const handleSave = () => {
-    toast.success("Document saved successfully!");
+  const handleSave = async () => {
+    if (!documentId) {
+      toast.error("No document to save");
+      return;
+    }
+    
+    if (!hasUnsavedChanges) {
+      toast.info("No changes to save");
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    try {
+      // Save all page annotations to cloud
+      const savePromises: Promise<{ success: boolean; error?: string }>[] = [];
+      
+      pageAnnotations.forEach((objects, pageIndex) => {
+        savePromises.push(saveAnnotations(documentId, pageIndex, objects));
+      });
+      
+      const results = await Promise.all(savePromises);
+      
+      // Check if any failed
+      const failed = results.filter(r => !r.success);
+      
+      if (failed.length > 0) {
+        console.warn('Some annotations failed to save:', failed);
+        toast.warning(`Saved ${results.length - failed.length}/${results.length} pages`, {
+          description: 'Some annotations could not be synced to cloud'
+        });
+      } else {
+        toast.success("Document saved successfully!", {
+          description: `${pageAnnotations.size} pages synced to cloud`
+        });
+      }
+      
+      setHasUnsavedChanges(false);
+    } catch (err: any) {
+      console.error('Error saving document:', err);
+      toast.error("Failed to save document", { description: err.message });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDownload = async () => {
@@ -218,10 +297,12 @@ const EditorPage = () => {
                 strokeWidth={strokeWidth}
                 fillColor={fillColor}
                 opacity={opacity}
+                initialDrawingObjects={pageAnnotations.get(page.pageIndex)}
                 onUpdateBlock={(blockId, html) => updateBlock(page.pageIndex, blockId, html)}
                 onMoveBlock={(blockId, newBox) => moveBlock(page.pageIndex, blockId, newBox)}
                 onUpdateBlockStyles={(blockId, styles) => updateBlockStyles(page.pageIndex, blockId, styles)}
-                onDrawingChange={(objects) => console.log('Drawing changed:', objects)}
+                onDrawingChange={(objects) => handleDrawingChange(page.pageIndex, objects)}
+                onHistoryChange={handleHistoryChange}
               />
             </div>
           ))}
@@ -256,6 +337,8 @@ const EditorPage = () => {
         onViewModeChange={setViewMode}
         processingStatus={status}
         processingProgress={progress}
+        hasUnsavedChanges={hasUnsavedChanges}
+        isSaving={isSaving}
       />
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -280,8 +363,8 @@ const EditorPage = () => {
             onRotate={() => setRotation(r => (r + 90) % 360)}
             canUndo={canUndo}
             canRedo={canRedo}
-            onUndo={undo}
-            onRedo={redo}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
             viewMode={viewMode}
           />
           
@@ -305,11 +388,12 @@ const EditorPage = () => {
                     onToolChange={setActiveTool}
                     canUndo={canUndo}
                     canRedo={canRedo}
-                    onUndo={undo}
-                    onRedo={redo}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
                     onClearAll={() => {
                       if (confirm('Clear all drawings?')) {
                         (window as any).__drawingCanvas?.clearCanvas?.();
+                        setHasUnsavedChanges(true);
                       }
                     }}
                     onExport={handleDownload}
@@ -339,31 +423,10 @@ const EditorPage = () => {
           </div>
         </main>
 
-        {/* AI Assistant Toggle Button */}
-        {viewMode === 'edit' && status === 'complete' && !aiPanelOpen && (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setAiPanelOpen(true)}
-            className="fixed right-4 bottom-4 z-50 shadow-lg"
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            AI Assistant
-          </Button>
-        )}
-
-        {/* AI Assistant Panel */}
-        {viewMode === 'edit' && (
-          <AIAssistantPanel
-            isOpen={aiPanelOpen}
-            onClose={() => setAiPanelOpen(false)}
-            documentText={documentText}
-          />
-        )}
-
         <RightSidebar 
           isOpen={rightSidebarOpen} 
-          onToggle={() => setRightSidebarOpen(!rightSidebarOpen)} 
+          onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+          documentText={documentText}
         />
       </div>
     </div>

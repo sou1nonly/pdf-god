@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileDown, Save, User, Settings, LogOut, Moon, Sun, ArrowLeft, Eye, Edit } from "lucide-react";
+import { FileDown, Save, User, Settings, LogOut, Moon, Sun, ArrowLeft, Eye, Edit, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,6 +26,8 @@ interface TopBarProps {
   onViewModeChange?: (mode: 'preview' | 'edit') => void;
   processingStatus?: 'idle' | 'processing' | 'complete' | 'error';
   processingProgress?: number;
+  hasUnsavedChanges?: boolean;
+  isSaving?: boolean;
 }
 
 export const TopBar = ({ 
@@ -38,7 +40,9 @@ export const TopBar = ({
   viewMode,
   onViewModeChange,
   processingStatus,
-  processingProgress
+  processingProgress,
+  hasUnsavedChanges = false,
+  isSaving = false
 }: TopBarProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -138,9 +142,21 @@ export const TopBar = ({
       <div className="flex items-center gap-2 ml-auto">
         {showActions && (
           <>
-            <Button variant="ghost" size="sm" onClick={onSave}>
-              <Save className="h-4 w-4 md:mr-2" />
-              <span className="hidden md:inline">Save</span>
+            <Button 
+              variant={hasUnsavedChanges ? "default" : "ghost"} 
+              size="sm" 
+              onClick={onSave}
+              disabled={isSaving}
+              className={hasUnsavedChanges ? "bg-green-600 hover:bg-green-700" : ""}
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 md:mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 md:mr-2" />
+              )}
+              <span className="hidden md:inline">
+                {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save*' : 'Save'}
+              </span>
             </Button>
             
             <Button variant="default" size="sm" onClick={onDownload}>

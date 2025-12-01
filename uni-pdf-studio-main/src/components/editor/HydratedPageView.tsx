@@ -110,10 +110,12 @@ interface HydratedPageViewProps {
   strokeWidth?: number;
   fillColor?: string;
   opacity?: number;
+  initialDrawingObjects?: any[]; // Fabric.js objects to load initially
   onUpdateBlock?: (blockId: string, html: string) => void;
   onMoveBlock?: (blockId: string, newBox: [number, number, number, number]) => void;
   onUpdateBlockStyles?: (blockId: string, styles: Partial<TextBlockStyles>) => void;
   onDrawingChange?: (objects: any[]) => void;
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
 }
 
 // Clean Text Block Component with proper paragraph rendering
@@ -438,10 +440,12 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = ({
   strokeWidth = 2,
   fillColor = 'transparent',
   opacity = 1,
+  initialDrawingObjects,
   onUpdateBlock,
   onMoveBlock,
   onUpdateBlockStyles,
-  onDrawingChange
+  onDrawingChange,
+  onHistoryChange
 }) => {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [blockWithTextSelection, setBlockWithTextSelection] = useState<string | null>(null);
@@ -556,8 +560,10 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = ({
             strokeWidth={strokeWidth}
             fillColor={fillColor}
             opacity={opacity}
+            initialObjects={initialDrawingObjects}
             onToolChange={() => {}} // Tool change handled by parent
             onObjectsChange={onDrawingChange}
+            onHistoryChange={onHistoryChange}
             isActive={true}
           />
 

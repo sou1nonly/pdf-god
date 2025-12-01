@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 import {
   Pencil,
   Circle,
@@ -52,6 +52,21 @@ export type DrawingTool =
   | 'highlight'
   | 'note';
 
+// Expose methods for parent components
+export interface DrawingCanvasHandle {
+  clearCanvas: () => void;
+  deleteSelected: () => void;
+  exportToJSON: () => any;
+  getObjectsForExport: () => any[];
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  getObjects: () => any[];
+  hasUnsavedChanges: () => boolean;
+  markAsSaved: () => void;
+}
+
 type DrawingCanvasProps = {
   width: number;
   height: number;
@@ -62,11 +77,13 @@ type DrawingCanvasProps = {
   fillColor: string;
   opacity?: number;
   isActive?: boolean; // Controls whether canvas receives pointer events
+  initialObjects?: any[]; // Fabric.js objects to load initially
   onToolChange: (tool: DrawingTool) => void;
   onObjectsChange?: (objects: any[]) => void;
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
 };
 
-export function DrawingCanvas({
+export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(function DrawingCanvas({
   width,
   height,
   scale,
@@ -76,14 +93,127 @@ export function DrawingCanvas({
   fillColor,
   opacity = 1,
   isActive = true,
+  initialObjects,
   onToolChange,
   onObjectsChange,
-}: DrawingCanvasProps) {
+  onHistoryChange,
+}, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<any>(null);
   const isDrawingShapeRef = useRef(false);
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
   const currentShapeRef = useRef<any>(null);
+  const initialObjectsLoadedRef = useRef(false);
+  
+  // Undo/Redo history state
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const isUndoRedoingRef = useRef(false);
+  const lastSavedStateRef = useRef<string>('');
+  const MAX_HISTORY = 50;
+
+  // Save current canvas state to history
+  const saveToHistory = useCallback(() => {
+    if (!fabricRef.current || isUndoRedoingRef.current) return;
+    
+    const json = JSON.stringify(fabricRef.current.toJSON());
+    
+    // Don't save if state hasn't changed
+    if (historyRef.current[historyIndexRef.current] === json) return;
+    
+    // Remove any future states if we're not at the end
+    historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+    
+    // Add new state
+    historyRef.current.push(json);
+    historyIndexRef.current++;
+    
+    // Trim history if exceeds max
+    if (historyRef.current.length > MAX_HISTORY) {
+      historyRef.current.shift();
+      historyIndexRef.current--;
+    }
+    
+    // Notify parent of history state change
+    onHistoryChange?.(historyIndexRef.current > 0, historyIndexRef.current < historyRef.current.length - 1);
+  }, [onHistoryChange]);
+
+  // Undo function
+  const undo = useCallback(() => {
+    if (!fabricRef.current || historyIndexRef.current <= 0) return;
+    
+    isUndoRedoingRef.current = true;
+    historyIndexRef.current--;
+    
+    const state = historyRef.current[historyIndexRef.current];
+    fabricRef.current.loadFromJSON(JSON.parse(state), () => {
+      // Make all loaded objects permanent
+      fabricRef.current.getObjects().forEach((obj: any) => {
+        obj.set({
+          selectable: false,
+          evented: false,
+          hasControls: false,
+          hasBorders: false,
+          lockMovementX: true,
+          lockMovementY: true,
+        });
+      });
+      fabricRef.current.renderAll();
+      isUndoRedoingRef.current = false;
+      
+      // Notify parent
+      onHistoryChange?.(historyIndexRef.current > 0, historyIndexRef.current < historyRef.current.length - 1);
+      onObjectsChange?.(fabricRef.current.toJSON().objects);
+    });
+  }, [onHistoryChange, onObjectsChange]);
+
+  // Redo function
+  const redo = useCallback(() => {
+    if (!fabricRef.current || historyIndexRef.current >= historyRef.current.length - 1) return;
+    
+    isUndoRedoingRef.current = true;
+    historyIndexRef.current++;
+    
+    const state = historyRef.current[historyIndexRef.current];
+    fabricRef.current.loadFromJSON(JSON.parse(state), () => {
+      // Make all loaded objects permanent
+      fabricRef.current.getObjects().forEach((obj: any) => {
+        obj.set({
+          selectable: false,
+          evented: false,
+          hasControls: false,
+          hasBorders: false,
+          lockMovementX: true,
+          lockMovementY: true,
+        });
+      });
+      fabricRef.current.renderAll();
+      isUndoRedoingRef.current = false;
+      
+      // Notify parent
+      onHistoryChange?.(historyIndexRef.current > 0, historyIndexRef.current < historyRef.current.length - 1);
+      onObjectsChange?.(fabricRef.current.toJSON().objects);
+    });
+  }, [onHistoryChange, onObjectsChange]);
+
+  const canUndo = useCallback(() => historyIndexRef.current > 0, []);
+  const canRedo = useCallback(() => historyIndexRef.current < historyRef.current.length - 1, []);
+  
+  const hasUnsavedChanges = useCallback(() => {
+    if (!fabricRef.current) return false;
+    const currentState = JSON.stringify(fabricRef.current.toJSON());
+    return currentState !== lastSavedStateRef.current;
+  }, []);
+  
+  const markAsSaved = useCallback(() => {
+    if (!fabricRef.current) return;
+    lastSavedStateRef.current = JSON.stringify(fabricRef.current.toJSON());
+  }, []);
+  
+  const getObjects = useCallback(() => {
+    if (!fabricRef.current) return [];
+    return fabricRef.current.toJSON().objects;
+  }, []);
 
   // Initialize Fabric canvas
   useEffect(() => {
@@ -92,27 +222,54 @@ export function DrawingCanvas({
     const canvas = new fabric.Canvas(canvasRef.current, {
       width: width * scale,
       height: height * scale,
-      selection: activeTool === 'select',
+      selection: false, // Disable selection globally - objects are permanent
       backgroundColor: 'transparent',
       preserveObjectStacking: true,
     });
 
     fabricRef.current = canvas;
+    
+    // Save initial empty state to history
+    const initialState = JSON.stringify(canvas.toJSON());
+    historyRef.current = [initialState];
+    historyIndexRef.current = 0;
+    lastSavedStateRef.current = initialState;
 
     // Listen for object changes
     canvas.on('object:modified', () => {
+      saveToHistory();
       if (onObjectsChange) {
         onObjectsChange(canvas.toJSON().objects);
       }
     });
 
-    canvas.on('object:added', () => {
+    canvas.on('object:added', (e: any) => {
+      // Make all newly added objects permanent and non-editable
+      if (e.target && !isUndoRedoingRef.current) {
+        e.target.set({
+          selectable: false,
+          evented: false,
+          hasControls: false,
+          hasBorders: false,
+          lockMovementX: true,
+          lockMovementY: true,
+          lockRotation: true,
+          lockScalingX: true,
+          lockScalingY: true,
+        });
+      }
+      if (!isUndoRedoingRef.current) {
+        saveToHistory();
+      }
       if (onObjectsChange) {
         onObjectsChange(canvas.toJSON().objects);
       }
     });
 
     canvas.on('object:removed', () => {
+      if (!isUndoRedoingRef.current) {
+        saveToHistory();
+      }
       if (onObjectsChange) {
         onObjectsChange(canvas.toJSON().objects);
       }
@@ -125,6 +282,45 @@ export function DrawingCanvas({
       fabricRef.current = null;
     };
   }, []);
+
+  // Load initial objects when they become available
+  useEffect(() => {
+    if (!fabricRef.current || !initialObjects || initialObjects.length === 0 || initialObjectsLoadedRef.current) return;
+    
+    const canvas = fabricRef.current;
+    
+    // Clear existing objects before loading
+    canvas.clear();
+    
+    // Load the saved objects
+    canvas.loadFromJSON({ objects: initialObjects }, () => {
+      // Make all loaded objects permanent and non-editable
+      canvas.getObjects().forEach((obj: any) => {
+        obj.set({
+          selectable: false,
+          evented: false,
+          hasControls: false,
+          hasBorders: false,
+          lockMovementX: true,
+          lockMovementY: true,
+          lockRotation: true,
+          lockScalingX: true,
+          lockScalingY: true,
+        });
+      });
+      canvas.renderAll();
+      initialObjectsLoadedRef.current = true;
+      
+      // Reset history with loaded state as the base
+      const loadedState = JSON.stringify(canvas.toJSON());
+      historyRef.current = [loadedState];
+      historyIndexRef.current = 0;
+      lastSavedStateRef.current = loadedState;
+      onHistoryChange?.(false, false);
+      
+      console.log(`Loaded ${initialObjects.length} annotation objects (locked)`);
+    });
+  }, [initialObjects, onHistoryChange]);
 
   // Update canvas dimensions when scale changes
   useEffect(() => {
@@ -147,6 +343,14 @@ export function DrawingCanvas({
     canvas.isDrawingMode = false;
     canvas.selection = false;
     canvas.defaultCursor = 'default';
+
+    // Reset all objects to non-interactive (permanent)
+    canvas.forEachObject((obj: any) => {
+      obj.selectable = false;
+      obj.evented = false;
+      obj.hasControls = false;
+      obj.hasBorders = false;
+    });
 
     // Remove existing event listeners
     canvas.off('mouse:down');
@@ -610,23 +814,61 @@ export function DrawingCanvas({
     });
   }, []);
 
-  // Expose methods via ref
+  // Expose methods via useImperativeHandle for parent component access
+  useImperativeHandle(ref, () => ({
+    clearCanvas,
+    deleteSelected,
+    exportToJSON,
+    getObjectsForExport,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    getObjects,
+    hasUnsavedChanges,
+    markAsSaved,
+  }), [clearCanvas, deleteSelected, exportToJSON, getObjectsForExport, undo, redo, canUndo, canRedo, getObjects, hasUnsavedChanges, markAsSaved]);
+
+  // Also expose methods to window for legacy access
   useEffect(() => {
-    // Attach methods to window for external access (temporary)
     (window as any).__drawingCanvas = {
       clearCanvas,
       deleteSelected,
       exportToJSON,
-      exportToSVG,
       getObjectsForExport,
       importFromJSON,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
     };
-  }, [clearCanvas, deleteSelected, exportToJSON, exportToSVG, getObjectsForExport, importFromJSON]);
+  }, [clearCanvas, deleteSelected, exportToJSON, getObjectsForExport, importFromJSON, undo, redo, canUndo, canRedo]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!fabricRef.current) return;
+      
+      // Ignore if typing in input/textarea
+      if (e.target instanceof HTMLInputElement || 
+          e.target instanceof HTMLTextAreaElement ||
+          (e.target as HTMLElement).isContentEditable) {
+        return;
+      }
+
+      // Undo: Ctrl+Z
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      
+      // Redo: Ctrl+Y or Ctrl+Shift+Z
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+        return;
+      }
 
       // Delete key
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -645,7 +887,7 @@ export function DrawingCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelected]);
+  }, [deleteSelected, undo, redo]);
 
   // Determine when canvas should capture events
   // In drawing/annotation mode: capture everything (z-index 30)
@@ -672,7 +914,7 @@ export function DrawingCanvas({
       />
     </div>
   );
-}
+});
 
 // Tool button for toolbar
 type ToolButtonProps = {
