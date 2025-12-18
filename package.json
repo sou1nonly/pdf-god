@@ -1,34 +1,29 @@
 {
-  "name": "unipdf-studio-sprint-management",
+  "name": "unipdf-studio",
   "version": "1.0.0",
-  "description": "Sprint management system for UniPDF Studio project",
-  "scripts": {
-    "sync-sprints": "node scripts/sync-sprints.js",
-    "sprint-status": "node scripts/sprint-status.js",
-    "validate-sprints": "node scripts/validate-sprints.js",
-    "sprint-help": "cat documentation/SPRINT-MANAGEMENT-README.md",
-    "view-changelog": "cat documentation/SPRINT-CHANGELOG.md | tail -100",
-    "backup-sprints": "node scripts/backup-sprints.js",
-    "full-sync": "npm run validate-sprints && npm run sync-sprints && npm run sprint-status"
-  },
-  "keywords": [
-    "sprint",
-    "agile",
-    "project-management",
-    "scrum"
+  "private": true,
+  "description": "UniPDF Studio - Professional PDF Editor with AI",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
   ],
-  "author": "UniPDF Studio Team",
-  "license": "MIT",
-  "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.0",
-    "@tiptap/extension-color": "^3.10.7",
-    "@tiptap/extension-highlight": "^3.10.7",
-    "@tiptap/extension-text-style": "^3.10.7",
-    "@tiptap/react": "^3.10.7",
-    "@tiptap/starter-kit": "^3.10.7",
-    "js-yaml": "^4.1.0"
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspaces",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "lint": "npm run lint --workspaces",
+    "clean": "rimraf backend/dist frontend/dist",
+    "postinstall": "npm run build --workspace=shared"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "rimraf": "^5.0.5"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }
