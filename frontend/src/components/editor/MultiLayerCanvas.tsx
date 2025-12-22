@@ -33,6 +33,7 @@ interface LayerCanvasProps {
   fillColor: string;
   opacity: number;
   onObjectsChange?: (layerId: string, objects: any[]) => void;
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
   initialObjects?: any[];
 }
 
@@ -43,6 +44,7 @@ export interface LayerCanvasRef {
   undo: () => void;
   redo: () => void;
   getCanvas: () => HTMLCanvasElement | null; // For export
+  deleteSelected: () => void;
 }
 
 // Single Layer Canvas component - each layer is its own Fabric.js canvas
@@ -61,6 +63,7 @@ export const LayerCanvas = forwardRef<LayerCanvasRef, LayerCanvasProps>(({
   fillColor,
   opacity,
   onObjectsChange,
+  onHistoryChange,
   initialObjects,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -106,12 +109,10 @@ export const LayerCanvas = forwardRef<LayerCanvasRef, LayerCanvasProps>(({
       height: height * scale,
     });
 
-    // Scale all objects
-    canvas.getObjects().forEach(obj => {
-      obj.scaleX = (obj.scaleX || 1);
-      obj.scaleY = (obj.scaleY || 1);
-    });
+    // Fix: Use Zoom mechanism to scale drawing context properly
+    canvas.setZoom(scale);
 
+    // No need to manually scale objects if we use setZoom
     canvas.renderAll();
   }, [width, height, scale]);
 
@@ -135,7 +136,13 @@ export const LayerCanvas = forwardRef<LayerCanvasRef, LayerCanvasProps>(({
       historyRef.current.shift();
       historyIndexRef.current--;
     }
-  }, []);
+
+    // Notify parent of history state
+    onHistoryChange?.(
+      historyIndexRef.current > 0,
+      historyIndexRef.current < historyRef.current.length - 1
+    );
+  }, [onHistoryChange]);
 
   // Notify parent of object changes
   const notifyObjectsChange = useCallback(() => {
@@ -950,6 +957,10 @@ export const LayerCanvas = forwardRef<LayerCanvasRef, LayerCanvasProps>(({
         canvas.renderAll();
         isUndoRedoRef.current = false;
         notifyObjectsChange();
+        onHistoryChange?.(
+          historyIndexRef.current > 0,
+          historyIndexRef.current < historyRef.current.length - 1
+        );
       });
     },
     redo: () => {
@@ -963,6 +974,10 @@ export const LayerCanvas = forwardRef<LayerCanvasRef, LayerCanvasProps>(({
         canvas.renderAll();
         isUndoRedoRef.current = false;
         notifyObjectsChange();
+        onHistoryChange?.(
+          historyIndexRef.current > 0,
+          historyIndexRef.current < historyRef.current.length - 1
+        );
       });
     },
     getCanvas: () => {
@@ -975,6 +990,18 @@ export const LayerCanvas = forwardRef<LayerCanvasRef, LayerCanvasProps>(({
       } catch (e) {
         // Fallback to lower canvas
         return canvas.getElement();
+      }
+    },
+    deleteSelected: () => {
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      const activeObjects = canvas.getActiveObjects();
+      if (activeObjects.length > 0) {
+        canvas.discardActiveObject();
+        activeObjects.forEach((obj: FabricObject) => canvas.remove(obj));
+        canvas.renderAll();
+        saveToHistory();
+        notifyObjectsChange();
       }
     },
   }), [saveToHistory, notifyObjectsChange]);
@@ -1057,7 +1084,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-2 min-w-[180px]">
+    <div className="bg-white/95 backdrop-blur border border-border rounded-2xl shadow-2xl ring-1 ring-black/5 p-3 min-w-[200px]">
       {/* Header */}
       <div className="flex items-center justify-between mb-2 px-1">
         <span className="text-xs font-medium text-gray-600">Layers</span>

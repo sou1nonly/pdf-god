@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAIChat, useAISummarize, useAIRewrite, useAIQuestions } from "@/hooks/api";
+import { useAuth } from "@/contexts/AuthContext";
 import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@unipdf/shared";
 
 interface RightSidebarProps {
@@ -20,6 +21,7 @@ export const RightSidebar = ({
 }: RightSidebarProps) => {
   // Tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'summary' | 'rewrite'>('chat');
+  const { isGuest } = useAuth();
 
   // AI Hooks
   const { mutate: chat, isPending: chatLoading } = useAIChat();
@@ -72,7 +74,7 @@ export const RightSidebar = ({
         { documentText, count: 3 },
         {
           onSuccess: (data) => {
-            setSuggestedQuestions(data.slice(0, 3));
+            setSuggestedQuestions(data.questions.slice(0, 3));
             setQuestionsGenerated(true);
           }
         }
@@ -98,8 +100,8 @@ export const RightSidebar = ({
     chat(
       { message: userMessage, documentText, history: messages },
       {
-        onSuccess: (response: string) => {
-          setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+        onSuccess: (data) => {
+          setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
         },
         onError: (error) => {
           setMessages(prev => [...prev, {
@@ -128,8 +130,8 @@ export const RightSidebar = ({
     summarize(
       { documentText, length: summaryLength },
       {
-        onSuccess: (result) => {
-          setSummary(result);
+        onSuccess: (data) => {
+          setSummary(data.summary);
           setInternalSummaryLoading(false);
         },
         onError: () => setInternalSummaryLoading(false)
@@ -155,8 +157,8 @@ export const RightSidebar = ({
     rewrite(
       { text: selectedText, tone: rewriteTone },
       {
-        onSuccess: (result: string[]) => {
-          setRewriteSuggestions(result);
+        onSuccess: (data) => {
+          setRewriteSuggestions(data.suggestions);
         }
       }
     );
@@ -168,13 +170,45 @@ export const RightSidebar = ({
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Collapsed state
+  // Collapsed state - made more noticeable
+  // Collapsed state - Icon bar
   if (!isOpen) {
     return (
-      <div className="w-12 border-l bg-card flex flex-col items-center py-2">
-        <Button variant="ghost" size="icon" onClick={onToggle} className="mb-2">
-          <Bot className="h-4 w-4" />
+      <div className="w-14 border-l bg-background flex flex-col items-center py-4 gap-4 z-20 h-full">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggle}
+          className="h-10 w-10 text-muted-foreground hover:text-primary mb-2"
+          title="Expand AI Copilot"
+        >
+          <Sparkles className="h-5 w-5" />
         </Button>
+
+        <div className="w-8 h-px bg-border/50" />
+
+        {([
+          { id: 'chat', label: 'Chat', icon: Bot, color: 'text-blue-500' },
+          { id: 'summary', label: 'Summary', icon: FileText, color: 'text-orange-500' },
+          { id: 'rewrite', label: 'Rewrite', icon: Wand2, color: 'text-purple-500' },
+        ] as const).map(({ id, label, icon: Icon, color }) => (
+          <Button
+            key={id}
+            variant={activeTab === id ? 'secondary' : 'ghost'}
+            size="icon"
+            onClick={() => {
+              setActiveTab(id);
+              onToggle();
+            }}
+            className={cn(
+              "h-10 w-10 rounded-xl transition-all hover:scale-105",
+              activeTab === id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"
+            )}
+            title={label}
+          >
+            <Icon className={cn("h-5 w-5", activeTab === id && color)} />
+          </Button>
+        ))}
       </div>
     );
   }
@@ -183,20 +217,22 @@ export const RightSidebar = ({
   const isRewriteLoading = rewriteLoadingHook;
 
   return (
-    <aside className="w-80 border-l bg-card flex flex-col shrink-0 h-full">
+    <aside className="w-80 border-l bg-card flex flex-col shrink-0 h-full shadow-soft z-20">
       {/* Header */}
-      <div className="h-12 border-b flex items-center justify-between px-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <h3 className="font-semibold text-sm">AI Assistant</h3>
+      <div className="h-16 border-b flex items-center justify-between px-4 bg-white/50 backdrop-blur-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <h3 className="font-semibold text-sm">AI Copilot</h3>
         </div>
-        <Button variant="ghost" size="icon" onClick={onToggle} className="h-8 w-8">
+        <Button variant="ghost" size="icon" onClick={onToggle} className="h-8 w-8 text-muted-foreground hover:text-foreground">
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b">
+      <div className="flex p-1 mx-4 mt-4 bg-muted/40 rounded-xl border border-border/50">
         {([
           { id: 'chat', label: 'Chat', icon: Bot },
           { id: 'summary', label: 'Summary', icon: FileText },
@@ -206,23 +242,40 @@ export const RightSidebar = ({
             key={id}
             onClick={() => setActiveTab(id)}
             className={cn(
-              "flex-1 py-2 px-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors",
+              "flex-1 py-1.5 px-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all rounded-lg",
               activeTab === id
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-white text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/50"
             )}
           >
-            <Icon className="h-3 w-3" />
+            <Icon className="h-3.5 w-3.5" />
             {label}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {isGuest && (
+          <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center space-y-4">
+            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg">AI Features Locked</h3>
+              <p className="text-sm text-muted-foreground mt-2">
+                Sign in to access AI chat, summarization, and rewriting tools.
+              </p>
+            </div>
+            <Button className="w-full" asChild>
+              <a href="/login">Sign In to Unlock</a>
+            </Button>
+          </div>
+        )}
+
         {/* Chat Tab */}
         {activeTab === 'chat' && (
-          <div className="flex-1 flex flex-col">
+          <div className={cn("flex-1 flex flex-col", isGuest && "opacity-20 pointer-events-none select-none")}>
             {/* Messages */}
             <div className="flex-1 overflow-auto p-3 space-y-3">
               {messages.length === 0 ? (
@@ -311,7 +364,7 @@ export const RightSidebar = ({
 
         {/* Summary Tab */}
         {activeTab === 'summary' && (
-          <div className="flex-1 flex flex-col p-3 gap-3">
+          <div className={cn("flex-1 flex flex-col p-3 gap-3", isGuest && "opacity-20 pointer-events-none select-none")}>
             <div className="flex gap-2">
               <select
                 value={summaryLength}
@@ -352,7 +405,7 @@ export const RightSidebar = ({
 
         {/* Rewrite Tab */}
         {activeTab === 'rewrite' && (
-          <div className="flex-1 flex flex-col p-3 gap-3 min-h-0">
+          <div className={cn("flex-1 flex flex-col p-3 gap-3 min-h-0", isGuest && "opacity-20 pointer-events-none select-none")}>
             <div className="space-y-2 shrink-0">
               <p className="text-xs text-muted-foreground">
                 Selected: {selectedText

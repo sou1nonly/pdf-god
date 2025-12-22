@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { 
-  Undo2, Redo2, MousePointer2, Type, Pencil, Square, 
+import {
+  Undo2, Redo2, MousePointer2, Type, Pencil, Square,
   Highlighter, StickyNote, Download, Trash2, Minus,
   Circle, ArrowRight, Eraser, Check, X, Waves
 } from 'lucide-react';
@@ -84,41 +84,41 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
   const isMarkTool = ['squiggly', 'check', 'cross'].includes(activeTool);
 
   return (
-    <div className="fixed left-4 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-2">
+    <div className="fixed left-4 top-1/2 -translate-y-1/2 z-[100] flex flex-col gap-2">
       {/* Main Tools Panel */}
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-2 flex flex-col gap-1">
+      <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-black/5 border border-border p-2 flex flex-col gap-1">
         {/* Undo/Redo */}
-        <div className="flex flex-col gap-1 pb-2 mb-2 border-b border-gray-200">
+        <div className="flex flex-col gap-1 pb-2 mb-2 border-b border-border/50">
           <button
             onClick={onUndo}
             disabled={!canUndo}
             className={cn(
-              "p-3 rounded-xl transition-all duration-200 group relative",
-              canUndo 
-                ? "hover:bg-gray-100 text-gray-700" 
-                : "text-gray-300 cursor-not-allowed"
+              "p-3 rounded-xl transition-all duration-200 group relative border",
+              canUndo
+                ? "bg-white border-gray-200 shadow-sm hover:border-primary/50 hover:bg-blue-50 hover:text-primary hover:shadow-md text-foreground/80 cursor-pointer"
+                : "bg-gray-50 border-transparent text-muted-foreground/30 cursor-not-allowed"
             )}
             title="Undo (Ctrl+Z)"
           >
             <icons.Undo2 size={20} />
-            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-              Undo <span className="text-gray-400">Ctrl+Z</span>
+            <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
+              Undo <span className="opacity-70">Ctrl+Z</span>
             </span>
           </button>
           <button
             onClick={onRedo}
             disabled={!canRedo}
             className={cn(
-              "p-3 rounded-xl transition-all duration-200 group relative",
-              canRedo 
-                ? "hover:bg-gray-100 text-gray-700" 
-                : "text-gray-300 cursor-not-allowed"
+              "p-3 rounded-xl transition-all duration-200 group relative border",
+              canRedo
+                ? "bg-white border-gray-200 shadow-sm hover:border-primary/50 hover:bg-blue-50 hover:text-primary hover:shadow-md text-foreground/80 cursor-pointer"
+                : "bg-gray-50 border-transparent text-muted-foreground/30 cursor-not-allowed"
             )}
             title="Redo (Ctrl+Y)"
           >
             <icons.Redo2 size={20} />
-            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-              Redo <span className="text-gray-400">Ctrl+Y</span>
+            <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
+              Redo <span className="opacity-70">Ctrl+Y</span>
             </span>
           </button>
         </div>
@@ -129,17 +129,17 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
             key={tool.id}
             onClick={() => onToolChange(tool.id)}
             className={cn(
-              "p-3 rounded-xl transition-all duration-200 group relative",
+              "p-3 rounded-xl transition-all duration-200 group relative border",
               activeTool === tool.id
-                ? "bg-blue-500 text-white shadow-md"
-                : "hover:bg-gray-100 text-gray-700"
+                ? "bg-primary text-primary-foreground shadow-md border-primary"
+                : "bg-white border-gray-200 shadow-sm text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 hover:shadow-md"
             )}
             title={`${tool.label}${tool.shortcut ? ` (${tool.shortcut})` : ''}`}
           >
             <tool.icon size={20} />
-            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+            <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
               {tool.label}
-              {tool.shortcut && <span className="ml-2 text-gray-400">{tool.shortcut}</span>}
+              {tool.shortcut && <span className="ml-2 opacity-70">{tool.shortcut}</span>}
             </span>
           </button>
         ))}
@@ -151,21 +151,21 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
             className={cn(
               "p-3 rounded-xl transition-all duration-200 group relative w-full",
               isShapeTool
-                ? "bg-blue-500 text-white shadow-md"
-                : "hover:bg-gray-100 text-gray-700"
+                ? "bg-pastel-blue text-blue-900 shadow-sm"
+                : "hover:bg-muted text-muted-foreground hover:text-foreground"
             )}
             title="Shapes"
           >
             <icons.Square size={20} />
             <span className="absolute bottom-1 right-1 w-1.5 h-1.5 bg-current opacity-50 rounded-full" />
-            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-              Shapes <span className="text-gray-400">S</span>
+            <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
+              Shapes <span className="opacity-70">S</span>
             </span>
           </button>
-          
+
           {/* Shape submenu */}
           {expandedGroup === 'shapes' && (
-            <div className="absolute left-full ml-2 top-0 bg-white rounded-xl shadow-xl border border-gray-200 p-2 flex flex-col gap-1 min-w-[120px]">
+            <div className="absolute left-full ml-2 top-0 bg-white/90 backdrop-blur-md rounded-xl shadow-soft border border-white/20 p-2 flex flex-col gap-1 min-w-[120px]">
               {shapeTools.map((shape) => (
                 <button
                   key={shape.id}
@@ -176,8 +176,8 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
                   className={cn(
                     "p-2 rounded-lg transition-colors flex items-center gap-2",
                     activeTool === shape.id
-                      ? "bg-blue-500 text-white"
-                      : "hover:bg-gray-100 text-gray-700"
+                      ? "bg-pastel-blue text-blue-900 shadow-sm"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <shape.icon size={16} />
@@ -195,21 +195,21 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
             className={cn(
               "p-3 rounded-xl transition-all duration-200 group relative w-full",
               isMarkTool
-                ? "bg-blue-500 text-white shadow-md"
-                : "hover:bg-gray-100 text-gray-700"
+                ? "bg-pastel-green text-green-900 shadow-sm"
+                : "hover:bg-muted text-muted-foreground hover:text-foreground"
             )}
             title="Marks"
           >
             <icons.Check size={20} />
             <span className="absolute bottom-1 right-1 w-1.5 h-1.5 bg-current opacity-50 rounded-full" />
-            <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+            <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
               Marks
             </span>
           </button>
-          
+
           {/* Marks submenu */}
           {expandedGroup === 'marks' && (
-            <div className="absolute left-full ml-2 top-0 bg-white rounded-xl shadow-xl border border-gray-200 p-2 flex flex-col gap-1 min-w-[120px]">
+            <div className="absolute left-full ml-2 top-0 bg-white/90 backdrop-blur-md rounded-xl shadow-soft border border-white/20 p-2 flex flex-col gap-1 min-w-[120px]">
               {markTools.map((mark) => (
                 <button
                   key={mark.id}
@@ -220,8 +220,8 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
                   className={cn(
                     "p-2 rounded-lg transition-colors flex items-center gap-2",
                     activeTool === mark.id
-                      ? "bg-blue-500 text-white"
-                      : "hover:bg-gray-100 text-gray-700"
+                      ? "bg-pastel-green text-green-900 shadow-sm"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <mark.icon size={16} />
@@ -234,24 +234,24 @@ export const CanvaToolbar: React.FC<CanvaToolbarProps> = ({
       </div>
 
       {/* Actions Panel */}
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-2 flex flex-col gap-1">
+      <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-soft border border-white/20 p-2 flex flex-col gap-1">
         <button
           onClick={onExport}
-          className="p-3 rounded-xl hover:bg-green-50 text-green-600 transition-all duration-200 group relative"
+          className="p-3 rounded-xl hover:bg-pastel-green/50 text-green-700 transition-all duration-200 group relative"
           title="Export PDF"
         >
           <icons.Download size={20} />
-          <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+          <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
             Export PDF
           </span>
         </button>
         <button
           onClick={onClearAll}
-          className="p-3 rounded-xl hover:bg-red-50 text-red-500 transition-all duration-200 group relative"
+          className="p-3 rounded-xl hover:bg-red-50 text-destructive/80 transition-all duration-200 group relative"
           title="Clear All"
         >
           <icons.Trash2 size={20} />
-          <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+          <span className="absolute left-full ml-3 px-2 py-1 bg-foreground/80 text-background text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm">
             Clear All
           </span>
         </button>
@@ -283,12 +283,12 @@ export const ColorPanel: React.FC<ColorPanelProps> = ({
   onOpacityChange,
 }) => {
   const presetColors = [
-    '#000000', '#ef4444', '#f97316', '#f59e0b', '#22c55e', 
+    '#000000', '#ef4444', '#f97316', '#f59e0b', '#22c55e',
     '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b',
   ];
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl border border-gray-200 px-4 py-3 flex items-center gap-4">
+    <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-black/5 border border-border px-4 py-3 flex items-center gap-4">
       {/* Stroke color */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500 font-medium">Stroke</span>
@@ -298,8 +298,8 @@ export const ColorPanel: React.FC<ColorPanelProps> = ({
               key={color}
               className={cn(
                 "w-6 h-6 rounded-md border-2 transition-transform hover:scale-110",
-                strokeColor === color 
-                  ? "border-blue-500 ring-2 ring-blue-200" 
+                strokeColor === color
+                  ? "border-blue-500 ring-2 ring-blue-200"
                   : "border-gray-200"
               )}
               style={{ backgroundColor: color }}
@@ -324,11 +324,11 @@ export const ColorPanel: React.FC<ColorPanelProps> = ({
           <button
             className={cn(
               "w-6 h-6 rounded-md border-2 transition-transform hover:scale-110 flex items-center justify-center",
-              fillColor === 'transparent' 
-                ? "border-blue-500 ring-2 ring-blue-200" 
+              fillColor === 'transparent'
+                ? "border-blue-500 ring-2 ring-blue-200"
                 : "border-gray-200"
             )}
-            style={{ 
+            style={{
               background: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)',
               backgroundSize: '8px 8px',
               backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px'
@@ -343,8 +343,8 @@ export const ColorPanel: React.FC<ColorPanelProps> = ({
               key={`fill-${color}`}
               className={cn(
                 "w-6 h-6 rounded-md border-2 transition-transform hover:scale-110",
-                fillColor === color 
-                  ? "border-blue-500 ring-2 ring-blue-200" 
+                fillColor === color
+                  ? "border-blue-500 ring-2 ring-blue-200"
                   : "border-gray-200"
               )}
               style={{ backgroundColor: color }}

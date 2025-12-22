@@ -31,6 +31,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { DocumentThumbnail } from "./DocumentThumbnail";
 
 interface Document {
   id: string;
@@ -42,19 +43,24 @@ interface Document {
   updated_at: string;
 }
 
-export const DocumentsList = () => {
+interface DocumentsListProps {
+  embedded?: boolean;
+  onUploadClick?: () => void;
+}
+
+export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsListProps) => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  
+
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
   const [deleting, setDeleting] = useState(false);
-  
+
   // Rename dialog state
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [documentToRename, setDocumentToRename] = useState<Document | null>(null);
@@ -62,10 +68,12 @@ export const DocumentsList = () => {
   const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
-    if (user) {
+    if (user && !isGuest) {
       fetchDocuments();
+    } else if (isGuest) {
+      setLoading(false);
     }
-  }, [user]);
+  }, [user, isGuest]);
 
   const fetchDocuments = async () => {
     try {
@@ -78,12 +86,15 @@ export const DocumentsList = () => {
 
       if (error) {
         console.error("Error fetching documents:", error);
-        toast.error("Failed to load documents");
+        // If guest, likely RLS restriction or no documents yet. Don't show error.
+        if (!isGuest) {
+          toast.error(`Failed to load documents: ${error.message || 'Unknown error'}`);
+        }
         return;
       }
 
       setDocuments(data || []);
-      
+
       if (data && data.length > 0) {
         console.log(`Loaded ${data.length} documents`);
       }
@@ -222,8 +233,9 @@ export const DocumentsList = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center p-12">
         <div className="text-center space-y-2">
+          <RefreshCw className="h-8 w-8 animate-spin text-primary mx-auto" />
           <p className="text-muted-foreground">Loading documents...</p>
         </div>
       </div>
@@ -231,28 +243,35 @@ export const DocumentsList = () => {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b bg-card p-4">
+    <div className={`flex flex-col ${embedded ? 'h-auto' : 'h-full'}`}>
+      {/* Header - Only hide Title/Nav if embedded, but keep search/filters? 
+          Actually user wants "Search bar for filtering documents and a toggle for grid/list views" IN the integrated section.
+          So we keep the controls but hide the big "My Documents" title.
+      */}
+      <div className={`${embedded ? 'mb-6' : 'border-b bg-card p-4'}`}>
+        {/* Header Title (Hidden if embedded) */}
+        {!embedded && (
+          <h1 className="text-2xl font-bold mb-4">My Documents</h1>
+        )}
+
+        {/* Controls - Always visible, but styled differently if embedded */}
         <div className="flex items-center justify-between gap-4 mb-4">
-          <h1 className="text-2xl font-bold">My Documents</h1>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={fetchDocuments}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-            <Button onClick={() => navigate("/")}>
-              <Plus className="h-4 w-4 mr-2" />
-              Upload New
-            </Button>
-          </div>
+          {/* If embedded, we might hide the refresh button or move it */}
+          {!embedded && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={fetchDocuments}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          )}
         </div>
 
-        {/* Search and View Controls */}
+        {/* Search and View Controls - Styled for Pastel Aesthetic */}
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -260,14 +279,15 @@ export const DocumentsList = () => {
               placeholder="Search documents..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-white border-none shadow-sm h-10 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-primary/50"
             />
           </div>
-          <div className="flex items-center gap-1 border rounded-md">
+          <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm">
             <Button
               size="sm"
               variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
               onClick={() => setViewMode('grid')}
+              className={viewMode === 'grid' ? 'bg-primary/20 text-primary' : ''}
             >
               <Grid className="h-4 w-4" />
             </Button>
@@ -275,10 +295,22 @@ export const DocumentsList = () => {
               size="sm"
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
               onClick={() => setViewMode('list')}
+              className={viewMode === 'list' ? 'bg-primary/20 text-primary' : ''}
             >
               <List className="h-4 w-4" />
             </Button>
           </div>
+
+          {embedded && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={fetchDocuments}
+              className="text-muted-foreground hover:text-primary"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -289,14 +321,16 @@ export const DocumentsList = () => {
             <div className="text-center space-y-4">
               <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
               <div>
-                <p className="text-lg font-medium">No documents found</p>
+                <p className="text-lg font-medium">{isGuest ? "Guest Mode" : "No documents found"}</p>
                 <p className="text-sm text-muted-foreground">
-                  {searchQuery
-                    ? "Try a different search term"
-                    : "Upload your first PDF to get started"}
+                  {isGuest
+                    ? "Files edited in Guest Mode are not saved to the cloud."
+                    : searchQuery
+                      ? "Try a different search term"
+                      : "Upload your first PDF to get started"}
                 </p>
               </div>
-              <Button onClick={() => navigate("/")}>
+              <Button onClick={() => onUploadClick ? onUploadClick() : navigate("/")}>
                 <Plus className="h-4 w-4 mr-2" />
                 Upload Document
               </Button>
@@ -313,22 +347,23 @@ export const DocumentsList = () => {
             {filteredDocuments.map((doc) => (
               <Card
                 key={doc.id}
-                className="p-4 hover:shadow-md transition-all group"
+                className="p-4 hover:shadow-soft hover:shadow-primary/10 transition-all group border-0 bg-white/50 hover:bg-white"
               >
                 {viewMode === 'grid' ? (
                   <div className="space-y-3">
-                    <div className="aspect-[3/4] bg-muted rounded-md flex items-center justify-center">
-                      <FileText className="h-12 w-12 text-muted-foreground" />
+                    <div className="aspect-[3/4] bg-gray-50 rounded-xl flex items-center justify-center relative overflow-hidden group-hover:shadow-md transition-all border border-gray-100">
+                      <DocumentThumbnail storagePath={doc.storage_path} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none" />
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-medium truncate flex-1" title={doc.file_name}>
+                        <h3 className="font-medium truncate flex-1 text-sm group-hover:text-primary transition-colors" title={doc.file_name}>
                           {doc.file_name}
                         </h3>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <MoreVertical className="h-3 w-3" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -340,7 +375,7 @@ export const DocumentsList = () => {
                               <Edit2 className="h-4 w-4 mr-2" />
                               Rename
                             </DropdownMenuItem>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => handleDeleteClick(doc)}
                               className="text-destructive"
                             >
@@ -350,13 +385,13 @@ export const DocumentsList = () => {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
                         <span>{formatFileSize(doc.file_size)}</span>
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
-                      <Button 
-                        size="sm" 
-                        className="w-full"
+                      <Button
+                        size="sm"
+                        className="w-full bg-white text-primary border border-primary/20 shadow-sm hover:shadow-md hover:bg-primary hover:text-white transition-all"
                         onClick={() => navigate(`/editor?id=${doc.id}`)}
                       >
                         <ExternalLink className="h-3 w-3 mr-2" />
@@ -366,22 +401,24 @@ export const DocumentsList = () => {
                   </div>
                 ) : (
                   <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-muted rounded-md flex items-center justify-center shrink-0">
-                      <FileText className="h-6 w-6 text-muted-foreground" />
+                    <div className="h-12 w-12 bg-pastel-blue/20 rounded-lg flex items-center justify-center shrink-0 text-primary">
+                      <FileText className="h-6 w-6" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate" title={doc.file_name}>
+                      <h3 className="font-medium truncate group-hover:text-primary transition-colors" title={doc.file_name}>
                         {doc.file_name}
                       </h3>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
                         <span>{formatFileSize(doc.file_size)}</span>
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button 
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
                         size="sm"
+                        variant="ghost"
                         onClick={() => navigate(`/editor?id=${doc.id}`)}
+                        className="text-primary hover:bg-primary/10"
                       >
                         <ExternalLink className="h-3 w-3 mr-2" />
                         Open
@@ -397,7 +434,7 @@ export const DocumentsList = () => {
                             <Edit2 className="h-4 w-4 mr-2" />
                             Rename
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             onClick={() => handleDeleteClick(doc)}
                             className="text-destructive"
                           >

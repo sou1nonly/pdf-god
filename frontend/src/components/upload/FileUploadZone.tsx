@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { uploadFileToStorage, saveFileMetadata } from "@/lib/storage";
-import { 
-  detectFileType, 
-  convertAndCreatePDF, 
+import {
+  detectFileType,
+  convertAndCreatePDF,
   needsConversion,
-  getSupportedExtensions 
+  getSupportedExtensions
 } from "@/lib/format-converter";
 
 interface UploadFile {
@@ -30,13 +30,15 @@ interface FileUploadZoneProps {
   maxSizeMB?: number;
   acceptedFormats?: string[];
   disabled?: boolean;
+  localOnly?: boolean;
 }
 
 export const FileUploadZone = ({
   onUploadComplete,
   maxFiles = 5,
   maxSizeMB = 100,
-  acceptedFormats = ['.pdf']
+  acceptedFormats = ['.pdf'],
+  localOnly = false
 }: FileUploadZoneProps) => {
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const maxSizeBytes = maxSizeMB * 1024 * 1024;
@@ -44,7 +46,7 @@ export const FileUploadZone = ({
   const validateFile = (file: File): { valid: boolean; error?: string } => {
     // Check file type using format converter
     const fileInfo = detectFileType(file);
-    
+
     if (!fileInfo.isSupported) {
       return {
         valid: false,
@@ -77,11 +79,12 @@ export const FileUploadZone = ({
   const simulateUpload = async (uploadFile: UploadFile) => {
     try {
       let fileToUpload = uploadFile.file;
-      console.log('Starting upload for:', uploadFile.file.name, 'Needs conversion:', needsConversion(uploadFile.file));
+      console.log('Starting upload for:', uploadFile.file.name, 'Needs conversion:', needsConversion(uploadFile.file), 'LocalOnly:', localOnly);
 
       // Check if file needs conversion
+      // (Conversion logic remains same, it's local) 
       if (needsConversion(uploadFile.file)) {
-        // Update status to converting
+        // ... (existing conversion code) ...
         setUploadFiles(prev =>
           prev.map(uf =>
             uf.id === uploadFile.id
@@ -90,13 +93,12 @@ export const FileUploadZone = ({
           )
         );
 
-        // Convert file to PDF
         const convertedFile = await convertAndCreatePDF(uploadFile.file, {
           onProgress: (progress) => {
             setUploadFiles(prev =>
               prev.map(uf =>
                 uf.id === uploadFile.id
-                  ? { ...uf, progress: Math.floor(progress / 2) } // 0-50% for conversion
+                  ? { ...uf, progress: Math.floor(progress / 2) }
                   : uf
               )
             );
@@ -106,9 +108,28 @@ export const FileUploadZone = ({
         if (!convertedFile) {
           throw new Error('File conversion failed');
         }
-
-        console.log('File converted successfully:', convertedFile.name);
         fileToUpload = convertedFile;
+      }
+
+      // If local only, skip upload and metadata save
+      if (localOnly) {
+        console.log('Local Mode: Skipping upload to Supabase');
+
+        setUploadFiles(prev =>
+          prev.map(uf =>
+            uf.id === uploadFile.id
+              ? {
+                ...uf,
+                status: 'success' as const,
+                progress: 100,
+                // Create object URL for local preview
+                url: URL.createObjectURL(fileToUpload),
+                documentId: 'local-guest-doc'
+              }
+              : uf
+          )
+        );
+        return;
       }
 
       // Update status to uploading
@@ -128,12 +149,12 @@ export const FileUploadZone = ({
           setUploadFiles(prev =>
             prev.map(uf =>
               uf.id === uploadFile.id
-                ? { 
-                    ...uf, 
-                    progress: uploadFile.needsConversion 
-                      ? 50 + Math.floor(progress / 2) // 50-100% for upload if converted
-                      : progress // 0-100% if no conversion
-                  }
+                ? {
+                  ...uf,
+                  progress: uploadFile.needsConversion
+                    ? 50 + Math.floor(progress / 2)
+                    : progress
+                }
                 : uf
             )
           );
@@ -145,10 +166,10 @@ export const FileUploadZone = ({
           prev.map(uf =>
             uf.id === uploadFile.id
               ? {
-                  ...uf,
-                  status: 'error' as const,
-                  error: result.error || 'Upload failed'
-                }
+                ...uf,
+                status: 'error' as const,
+                error: result.error || 'Upload failed'
+              }
               : uf
           )
         );
@@ -171,12 +192,12 @@ export const FileUploadZone = ({
         prev.map(uf =>
           uf.id === uploadFile.id
             ? {
-                ...uf,
-                status: 'success' as const,
-                progress: 100,
-                url: result.url,
-                documentId: metadata.documentId
-              }
+              ...uf,
+              status: 'success' as const,
+              progress: 100,
+              url: result.url,
+              documentId: metadata.documentId
+            }
             : uf
         )
       );
@@ -186,10 +207,10 @@ export const FileUploadZone = ({
         prev.map(uf =>
           uf.id === uploadFile.id
             ? {
-                ...uf,
-                status: 'error' as const,
-                error: error.message || 'Upload failed'
-              }
+              ...uf,
+              status: 'error' as const,
+              error: error.message || 'Upload failed'
+            }
             : uf
         )
       );
@@ -212,10 +233,10 @@ export const FileUploadZone = ({
 
       // Validate and add files
       const newUploadFiles: UploadFile[] = [];
-      
+
       for (const file of acceptedFiles) {
         const validation = validateFile(file);
-        
+
         if (!validation.valid) {
           toast.error(`${file.name}: ${validation.error}`);
           continue;
@@ -234,7 +255,7 @@ export const FileUploadZone = ({
 
       if (newUploadFiles.length > 0) {
         setUploadFiles(prev => [...prev, ...newUploadFiles]);
-        
+
         // Start uploading all files
         const uploadPromises = newUploadFiles.map(async (uploadFile) => {
           try {
@@ -245,10 +266,10 @@ export const FileUploadZone = ({
               prev.map(uf =>
                 uf.id === uploadFile.id
                   ? {
-                      ...uf,
-                      status: 'error' as const,
-                      error: 'Upload failed. Please try again.'
-                    }
+                    ...uf,
+                    status: 'error' as const,
+                    error: 'Upload failed. Please try again.'
+                  }
                   : uf
               )
             );
@@ -261,10 +282,10 @@ export const FileUploadZone = ({
 
         // Get the updated upload files with documentIds
         setUploadFiles(current => {
-          const successFiles = current.filter(uf => 
+          const successFiles = current.filter(uf =>
             newUploadFiles.some(nuf => nuf.id === uf.id) && uf.status === 'success'
           );
-          
+
           // Notify parent component with completed uploads
           if (successFiles.length > 0) {
             onUploadComplete?.(
@@ -272,7 +293,7 @@ export const FileUploadZone = ({
               successFiles
             );
           }
-          
+
           return current;
         });
       }
@@ -301,10 +322,10 @@ export const FileUploadZone = ({
         prev.map(uf =>
           uf.id === id
             ? {
-                ...uf,
-                status: 'error' as const,
-                error: 'Upload failed. Please try again.'
-              }
+              ...uf,
+              status: 'error' as const,
+              error: 'Upload failed. Please try again.'
+            }
             : uf
         )
       );
@@ -353,16 +374,15 @@ export const FileUploadZone = ({
           ${isDragActive
             ? 'border-primary bg-primary/5 shadow-glow'
             : isDisabled
-            ? 'border-muted bg-muted/20 cursor-not-allowed opacity-50'
-            : 'border-border hover:border-primary hover:bg-muted/50'
+              ? 'border-muted bg-muted/20 cursor-not-allowed opacity-50'
+              : 'border-border hover:border-primary hover:bg-muted/50'
           }
         `}
       >
         <input {...getInputProps()} disabled={isDisabled} />
         <div className="flex flex-col items-center gap-4 text-center">
-          <div className={`h-16 w-16 rounded-full flex items-center justify-center ${
-            isDragActive ? 'bg-primary/20' : 'bg-primary/10'
-          }`}>
+          <div className={`h-16 w-16 rounded-full flex items-center justify-center ${isDragActive ? 'bg-primary/20' : 'bg-primary/10'
+            }`}>
             <Upload className={`h-8 w-8 ${isDragActive ? 'text-primary animate-bounce' : 'text-primary'}`} />
           </div>
           <div>
@@ -370,8 +390,8 @@ export const FileUploadZone = ({
               {isDragActive
                 ? 'Drop your files here'
                 : isDisabled
-                ? `Maximum ${maxFiles} files reached`
-                : 'Drop your PDF, image, or document files or click to browse'
+                  ? `Maximum ${maxFiles} files reached`
+                  : 'Drop your PDF, image, or document files or click to browse'
               }
             </p>
             <p className="text-sm text-muted-foreground">

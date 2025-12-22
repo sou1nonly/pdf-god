@@ -106,6 +106,8 @@ interface HydratedPageWithUrl extends HydratedPage {
 interface HydratedPageViewProps {
   page: HydratedPageWithUrl;
   scale?: number;
+  fitToContainer?: boolean;
+  containerWidth?: number;
   drawingTool?: DrawingTool;
   strokeColor?: string;
   strokeWidth?: number;
@@ -122,10 +124,21 @@ interface HydratedPageViewProps {
   activeLayerId?: string;
   layers?: Layer[];
   onLayerCanvasReady?: (layerId: string, ref: any) => void;
+  onZoomChange?: (zoom: number) => void;
 }
 
 // Clean Text Block Component with proper paragraph rendering
-const TextBlock: React.FC<{
+const TextBlock = React.memo(({
+  block,
+  scale,
+  pageWidth,
+  pageHeight,
+  isSelected,
+  onSelect,
+  onUpdateContent,
+  onResize,
+  onTextSelectionChange
+}: {
   block: TextBlockType;
   scale: number;
   pageWidth: number;
@@ -135,7 +148,7 @@ const TextBlock: React.FC<{
   onUpdateContent: (html: string) => void;
   onResize?: (newBox: [number, number, number, number]) => void;
   onTextSelectionChange?: (hasSelection: boolean) => void;
-}> = ({ block, scale, pageWidth, pageHeight, isSelected, onSelect, onUpdateContent, onResize, onTextSelectionChange }) => {
+}) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState<string | null>(null);
@@ -292,7 +305,7 @@ const TextBlock: React.FC<{
       className={`
         absolute
         ${isSelected ? 'ring-2 ring-blue-500 z-30' : 'hover:bg-blue-50/30 z-10'}
-        ${isEditing ? 'cursor-text bg-white shadow-lg z-40' : 'overflow-hidden'}
+        ${isEditing ? 'cursor-text bg-white shadow-lg z-40' : 'overflow-visible'}
         ${isResizing ? 'overflow-visible' : ''}
         ${isDragging ? 'cursor-move' : ''}
         ${!isEditing && !isDragging && isSelected ? 'cursor-move' : ''}
@@ -313,7 +326,7 @@ const TextBlock: React.FC<{
         textAlign: (block.styles.align as any) || 'left',
         lineHeight: block.styles.lineHeight || (isHeader ? 1.2 : 1.4),
         letterSpacing: isHeader ? '-0.01em' : '0',
-        padding: `${Math.max(1 * scale, 0.5)}px ${Math.max(2 * scale, 1)}px`,
+        padding: '0px', // Removed padding to prevent layout shifts
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
         borderRadius: '2px',
@@ -400,15 +413,20 @@ const TextBlock: React.FC<{
       )}
     </div>
   );
-};
+});
 
 // Image Block Component
-const ImageBlockView: React.FC<{
+const ImageBlockView = React.memo(({
+  block,
+  scale,
+  isSelected,
+  onSelect
+}: {
   block: ImageBlockType;
   scale: number;
   isSelected: boolean;
   onSelect: () => void;
-}> = ({ block, scale, isSelected, onSelect }) => {
+}) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
 
@@ -473,11 +491,13 @@ const ImageBlockView: React.FC<{
       )}
     </div>
   );
-};
+});
 
-export const HydratedPageView: React.FC<HydratedPageViewProps> = ({
+export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
   page,
   scale = 1,
+  fitToContainer = false,
+  containerWidth = 0,
   drawingTool = 'select',
   strokeColor = '#000000',
   strokeWidth = 2,
@@ -494,6 +514,7 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = ({
   activeLayerId,
   layers = [],
   onLayerCanvasReady,
+  onZoomChange,
 }) => {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [blockWithTextSelection, setBlockWithTextSelection] = useState<string | null>(null);
@@ -504,14 +525,38 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = ({
   // Is drawing mode active (any tool except select)
   const isDrawingMode = drawingTool !== 'select';
 
+  // Calculate effective scale based on fitToContainer mode
+  const effectiveScale = React.useMemo(() => {
+    if (fitToContainer && containerWidth > 0 && page?.dims?.width) {
+      // Fit to width with no margin (padding is handled by parent container)
+      return containerWidth / page.dims.width;
+    }
+    return scale;
+  }, [fitToContainer, containerWidth, page?.dims?.width, scale]);
+
+  // Sync effective scale back to parent zoom state when in fit-width mode
+  useEffect(() => {
+    if (fitToContainer && onZoomChange && effectiveScale) {
+      // Convert scale (e.g. 1.42) to integer (142)
+      const currentZoom = Math.floor(effectiveScale * 100);
+      const parentZoom = Math.round(scale * 100);
+
+      // Only update if difference is significant to avoid loops
+      if (Math.abs(currentZoom - parentZoom) > 2) {
+        onZoomChange(currentZoom);
+      }
+    }
+  }, [fitToContainer, effectiveScale, onZoomChange, scale]);
+
   // Find selected block for toolbar - only show if text is selected inside
   const selectedBlock = blockWithTextSelection
     ? page.blocks.find(b => b.id === blockWithTextSelection && b.type === 'text') as TextBlockType | undefined
     : undefined;
 
   // A4 dimensions at 72 DPI = 595 x 842 points
-  const pageWidth = page.dims.width * scale;
-  const pageHeight = page.dims.height * scale;
+  // A4 dimensions at 72 DPI = 595 x 842 points
+  const pageWidth = page.dims.width * effectiveScale;
+  const pageHeight = page.dims.height * effectiveScale;
 
   // Prepare all blocks for snapping reference
   const allBlocks = page.blocks.map(b => ({ id: b.id, box: b.box }));
@@ -525,119 +570,123 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = ({
 
   return (
     <SnapGuideContext.Provider value={{ activeGuides, setActiveGuides, allBlocks }}>
-      <div className="relative" style={{ width: pageWidth }}>
-        {/* Floating Toolbar - positioned above selected block */}
-        {selectedBlock && (
-          <div
-            className="absolute z-50"
-            style={{
-              top: `${(selectedBlock.box[1] / 100) * pageHeight - 50}px`,
-              left: `${((selectedBlock.box[0] + selectedBlock.box[2] / 2) / 100) * pageWidth}px`,
-              transform: 'translateX(-50%)',
-            }}
-          >
-            <FloatingToolbar
-              styles={selectedBlock.styles}
-              onUpdate={(styles) => onUpdateBlockStyles?.(selectedBlock.id, styles)}
-              position={{ top: 0, left: 0, width: 0 }} // Position handled by parent
-            />
-          </div>
-        )}
-
-        {/* A4 Page Canvas */}
-        <div
-          ref={pageRef}
-          className="relative bg-white shadow-2xl mx-auto overflow-hidden"
-          style={{
-            width: pageWidth,
-            height: pageHeight,
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          }}
-          onClick={() => setSelectedBlockId(null)}
-        >
-          {/* Clean White Background */}
-          <div className="absolute inset-0 bg-white" />
-
-          {/* Snap Guide Lines - invisible, just for haptic feedback */}
-          {/* Guides are now invisible - snapping still works but no visual lines */}
-
-          {/* Page Content - Text Blocks */}
-          <div>
-            {page.blocks.map((block) => {
-              if (block.type === 'text') {
-                return (
-                  <TextBlock
-                    key={block.id}
-                    block={block}
-                    scale={scale}
-                    pageWidth={pageWidth}
-                    pageHeight={pageHeight}
-                    isSelected={selectedBlockId === block.id}
-                    onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
-                    onUpdateContent={(html) => onUpdateBlock?.(block.id, html)}
-                    onResize={(newBox) => onMoveBlock?.(block.id, newBox)}
-                    onTextSelectionChange={(hasSelection) => {
-                      setBlockWithTextSelection(hasSelection ? block.id : null);
-                    }}
-                  />
-                );
-              }
-
-              if (block.type === 'image') {
-                return (
-                  <ImageBlockView
-                    key={block.id}
-                    block={block as ImageBlockType}
-                    scale={scale}
-                    isSelected={selectedBlockId === block.id}
-                    onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
-                  />
-                );
-              }
-
-              return null;
-            })}
-          </div>
-
-          {/* Drawing Canvas Overlay - Always mounted and active */}
-          {/* REMOVED: Old single canvas approach */}
-
-          {/* Multi-Layer Canvas System - Each layer is a separate canvas */}
-          {/* Skip 'pdf-content' layer as it represents the text editing layer below */}
-          {layers.filter(layer => layer.id !== 'pdf-content').map((layer, index) => (
-            <LayerCanvas
-              key={layer.id}
-              ref={(el) => {
-                if (el) {
-                  layerRefs.current.set(layer.id, el);
-                  onLayerCanvasReady?.(layer.id, el);
-                } else {
-                  layerRefs.current.delete(layer.id);
-                }
+      <div className="relative w-full flex justify-center">
+        <div className="relative" style={{ width: pageWidth, height: pageHeight }}>
+          {/* Floating Toolbar - positioned above selected block */}
+          {selectedBlock && (
+            <div
+              className="absolute z-50"
+              style={{
+                top: `${(selectedBlock.box[1] / 100) * pageHeight - 50}px`,
+                left: `${((selectedBlock.box[0] + selectedBlock.box[2] / 2) / 100) * pageWidth}px`,
+                transform: 'translateX(-50%)',
               }}
-              layerId={layer.id}
-              width={page.dims.width}
-              height={page.dims.height}
-              scale={scale}
-              isActive={activeLayerId === layer.id}
-              isVisible={layer.visible}
-              isLocked={layer.locked}
-              zIndex={10 + layer.order}
-              activeTool={drawingTool}
-              strokeColor={strokeColor}
-              strokeWidth={strokeWidth}
-              fillColor={fillColor}
-              opacity={opacity}
-              onObjectsChange={onLayerObjectsChange}
-            />
-          ))}
+            >
+              <FloatingToolbar
+                styles={selectedBlock.styles}
+                onUpdate={(styles) => onUpdateBlockStyles?.(selectedBlock.id, styles)}
+                position={{ top: 0, left: 0, width: 0 }} // Position handled by parent
+              />
+            </div>
+          )}
 
-          {/* Page Number */}
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-gray-300 pointer-events-none">
-            Page {page.pageIndex + 1}
+          {/* Page Canvas - transparent background */}
+          <div
+            ref={pageRef}
+            id={`page-${page.pageIndex + 1}`}
+            className="relative mx-auto"
+            style={{
+              width: pageWidth,
+              height: pageHeight,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={() => setSelectedBlockId(null)}
+          >
+            {/* Clean White Background */}
+            <div className="absolute inset-0 bg-white" />
+
+            {/* Snap Guide Lines - invisible, just for haptic feedback */}
+            {/* Guides are now invisible - snapping still works but no visual lines */}
+
+            {/* Page Content - Text Blocks */}
+            <div>
+              {page.blocks.map((block) => {
+                if (block.type === 'text') {
+                  return (
+                    <TextBlock
+                      key={block.id}
+                      block={block}
+                      scale={effectiveScale}
+                      pageWidth={pageWidth}
+                      pageHeight={pageHeight}
+                      isSelected={selectedBlockId === block.id}
+                      onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
+                      onUpdateContent={(html) => onUpdateBlock?.(block.id, html)}
+                      onResize={(newBox) => onMoveBlock?.(block.id, newBox)}
+                      onTextSelectionChange={(hasSelection) => {
+                        setBlockWithTextSelection(hasSelection ? block.id : null);
+                      }}
+                    />
+                  );
+                }
+
+                if (block.type === 'image') {
+                  return (
+                    <ImageBlockView
+                      key={block.id}
+                      block={block as ImageBlockType}
+                      scale={effectiveScale}
+                      isSelected={selectedBlockId === block.id}
+                      onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
+                    />
+                  );
+                }
+
+                return null;
+              })}
+            </div>
+
+            {/* Drawing Canvas Overlay - Always mounted and active */}
+            {/* REMOVED: Old single canvas approach */}
+
+            {/* Multi-Layer Canvas System - Each layer is a separate canvas */}
+            {/* Skip 'pdf-content' layer as it represents the text editing layer below */}
+            {layers.filter(layer => layer.id !== 'pdf-content').map((layer, index) => (
+              <LayerCanvas
+                key={layer.id}
+                ref={(el) => {
+                  if (el) {
+                    layerRefs.current.set(layer.id, el);
+                    onLayerCanvasReady?.(layer.id, el);
+                  } else {
+                    layerRefs.current.delete(layer.id);
+                  }
+                }}
+                layerId={layer.id}
+                width={page.dims.width}
+                height={page.dims.height}
+                scale={effectiveScale}
+                isActive={activeLayerId === layer.id}
+                isVisible={layer.visible}
+                isLocked={layer.locked}
+                zIndex={10 + layer.order}
+                activeTool={drawingTool}
+                strokeColor={strokeColor}
+                strokeWidth={strokeWidth}
+                fillColor={fillColor}
+                opacity={opacity}
+                onObjectsChange={onLayerObjectsChange}
+                onHistoryChange={onHistoryChange}
+              />
+            ))}
+
+            {/* Page Number */}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-gray-300 pointer-events-none">
+              Page {page.pageIndex + 1}
+            </div>
           </div>
         </div>
       </div>
     </SnapGuideContext.Provider>
   );
-};
+});

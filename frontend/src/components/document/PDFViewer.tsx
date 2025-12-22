@@ -15,9 +15,11 @@ interface PDFPageProps {
   scale: number;
   rotation: number;
   onInView: (pageNumber: number) => void;
+  fitToWidth?: boolean;
+  containerWidth?: number;
 }
 
-const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPageProps) => {
+const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView, fitToWidth, containerWidth }: PDFPageProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const annotationLayerRef = useRef<HTMLDivElement>(null);
@@ -60,10 +62,16 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPage
         const canvas = canvasRef.current!;
         const context = canvas.getContext('2d')!;
 
-        const viewport = page.getViewport({
+        let viewport = page.getViewport({
           scale: scale,
           rotation: rotation,
         });
+
+        if (fitToWidth && containerWidth && containerWidth > 0) {
+          const unscaledViewport = page.getViewport({ scale: 1, rotation: rotation });
+          const newScale = containerWidth / unscaledViewport.width;
+          viewport = page.getViewport({ scale: newScale, rotation: rotation });
+        }
 
         setDimensions({ width: viewport.width, height: viewport.height });
 
@@ -82,7 +90,7 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPage
           textLayerRef.current.innerHTML = '';
           textLayerRef.current.style.height = `${viewport.height}px`;
           textLayerRef.current.style.width = `${viewport.width}px`;
-          
+
           const textContent = await page.getTextContent();
           const textLayer = new pdfjsLib.TextLayer({
             textContentSource: textContent,
@@ -100,16 +108,16 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPage
 
           const annotations = await page.getAnnotations();
           const annotationLayer = new pdfjsLib.AnnotationLayer({
-             div: annotationLayerRef.current,
-             viewport: viewport.clone({ dontFlip: true }),
-             page: page,
-             accessibilityManager: null,
-             annotationCanvasMap: null,
-             annotationEditorUIManager: null,
-             structTreeLayer: null,
-             commentManager: null,
-             linkService: null,
-             annotationStorage: null
+            div: annotationLayerRef.current,
+            viewport: viewport.clone({ dontFlip: true }),
+            page: page,
+            accessibilityManager: null,
+            annotationCanvasMap: null,
+            annotationEditorUIManager: null,
+            structTreeLayer: null,
+            commentManager: null,
+            linkService: null,
+            annotationStorage: null
           });
           await annotationLayer.render({
             annotations,
@@ -130,17 +138,15 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPage
     };
 
     renderPage();
-  }, [pdfDocument, pageNumber, scale, rotation, isVisible]);
+  }, [pdfDocument, pageNumber, scale, rotation, isVisible, fitToWidth, containerWidth]);
 
   return (
-    <div 
+    <div
       ref={containerRef}
-      className="relative bg-white shadow-md mb-4 transition-all duration-200"
-      style={{ 
-        width: dimensions.width || 'auto', 
+      className="relative shadow-sm mb-2 transition-all duration-200"
+      style={{
+        width: dimensions.width || 'auto',
         height: dimensions.height || 'auto',
-        minHeight: '800px', // Placeholder height
-        minWidth: '600px'
       }}
       id={`page-${pageNumber}`}
     >
@@ -152,7 +158,7 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView }: PDFPage
       <canvas ref={canvasRef} className="block" />
       <div ref={textLayerRef} className="textLayer" />
       <div ref={annotationLayerRef} className="annotationLayer" />
-      
+
       {/* Page Number Indicator */}
       <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
         {pageNumber}
@@ -172,6 +178,8 @@ interface PDFViewerProps {
   totalPages?: number;
   onDocumentLoad?: (pdf: any) => void;
   rotation?: number;
+  fitToWidth?: boolean;
+  containerWidth?: number;
 }
 
 export const PDFViewer = ({
@@ -184,7 +192,9 @@ export const PDFViewer = ({
   currentPage: externalCurrentPage,
   totalPages: externalTotalPages,
   onDocumentLoad,
-  rotation: externalRotation = 0
+  rotation: externalRotation = 0,
+  fitToWidth,
+  containerWidth,
 }: PDFViewerProps) => {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [internalTotalPages, setInternalTotalPages] = useState(0);
@@ -195,7 +205,7 @@ export const PDFViewer = ({
   useEffect(() => {
     setRotation(externalRotation);
   }, [externalRotation]);
-  
+
   const zoom = scale ? scale / 100 : (initialZoom / 100);
 
   // Load PDF document
@@ -236,7 +246,8 @@ export const PDFViewer = ({
     if (externalCurrentPage && !loading && externalCurrentPage !== internalPageRef.current) {
       const pageElement = document.getElementById(`page-${externalCurrentPage}`);
       if (pageElement) {
-        pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pageElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+        internalPageRef.current = externalCurrentPage;
       }
     }
   }, [externalCurrentPage, loading]);
@@ -247,6 +258,27 @@ export const PDFViewer = ({
       onPageChange(pageNumber);
     }
   }, [onPageChange]);
+
+  // Sync scale with parent when in fitToWidth mode
+  useEffect(() => {
+    if (fitToWidth && pdfDocument && containerWidth && containerWidth > 0 && onZoomChange) {
+      const calculateFitScale = async () => {
+        try {
+          const page = await pdfDocument.getPage(1);
+          const viewport = page.getViewport({ scale: 1 });
+          // Subtract a small buffer to prevent oscillation
+          const newScalePercent = Math.floor((containerWidth / viewport.width) * 100);
+
+          if (scale && Math.abs(newScalePercent - scale) > 2) {
+            onZoomChange(newScalePercent);
+          }
+        } catch (e) {
+          console.error('Error calculating fit scale', e);
+        }
+      };
+      calculateFitScale();
+    }
+  }, [fitToWidth, pdfDocument, containerWidth, onZoomChange, scale]);
 
   if (loading) {
     return (
@@ -271,7 +303,7 @@ export const PDFViewer = ({
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-muted/30 p-8 h-full">
+    <div className="w-full bg-muted/30 p-8">
       <div className="flex flex-col items-center gap-4 min-h-full">
         {Array.from({ length: internalTotalPages }, (_, i) => (
           <PDFPage
@@ -281,6 +313,8 @@ export const PDFViewer = ({
             scale={zoom}
             rotation={rotation}
             onInView={handlePageInView}
+            fitToWidth={fitToWidth}
+            containerWidth={containerWidth}
           />
         ))}
       </div>

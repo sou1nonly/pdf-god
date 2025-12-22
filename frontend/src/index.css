@@ -3,126 +3,128 @@
 @tailwind utilities;
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+   All colors MUST be HSL.
 */
 
 @layer base {
   :root {
-    /* Base colors */
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    /* Base colors - Soft Off-White Background */
+    --background: 210 20% 98%;
+    --foreground: 222 47% 20%;
+    /* Softer dark blue-grey for text */
 
     /* Surface colors */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    
+    --card-foreground: 222 47% 20%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 222 47% 20%;
 
-    /* Brand colors - Primary Blue */
-    --primary: 217 91% 60%;
+    /* Brand colors - Primary (Darker Pastel Blue for Actions) */
+    /* Was: 217 91% 60% -> Now: Soft Indigo */
+    --primary: 225 70% 65%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 217 91% 55%;
-    --primary-glow: 217 91% 60%;
+    --primary-hover: 225 70% 60%;
+    --primary-glow: 225 70% 65%;
 
-    /* Brand colors - Secondary Purple */
-    --secondary: 258 90% 66%;
-    --secondary-foreground: 0 0% 100%;
-    --secondary-hover: 258 90% 61%;
+    /* Brand colors - Secondary (Pastel Purple) */
+    --secondary: 260 80% 85%;
+    --secondary-foreground: 222 47% 20%;
+    --secondary-hover: 260 80% 80%;
+
+    /* Accent Colors (Pastels for Shapes/Highlights) - Lightened by user request */
+    --pastel-blue: 210 80% 96%;
+    --pastel-green: 140 60% 95%;
+    --pastel-yellow: 45 80% 95%;
+    --pastel-pink: 340 80% 96%;
+    --pastel-orange: 25 80% 95%;
 
     /* Neutral colors */
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 55%;
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 210 20% 94%;
+    --accent-foreground: 222 47% 20%;
 
     /* Feedback colors */
-    --destructive: 0 84% 60%;
+    --destructive: 0 84% 75%;
+    /* Pastel Red */
     --destructive-foreground: 0 0% 100%;
-    
-    --success: 142 76% 36%;
+
+    --success: 142 60% 65%;
+    /* Pastel Green tone */
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 38 92% 65%;
+    /* Pastel Orange tone */
     --warning-foreground: 0 0% 100%;
 
     /* UI elements */
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%;
+    --border: 214 20% 90%;
+    --input: 214 20% 90%;
+    --ring: 225 70% 65%;
 
     /* Radius */
-    --radius: 0.75rem;
+    --radius: 1rem;
+    /* Softer, rounder corners */
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 240 5% 30%;
+    --sidebar-primary: 225 70% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 240 5% 30%;
+    --sidebar-border: 220 13% 95%;
+    --sidebar-ring: 225 70% 65%;
   }
 
   .dark {
-    /* Base colors */
-    --background: 222 47% 7%;
+    /* Dark Mode - Deep Pastel Tones */
+    --background: 222 47% 10%;
     --foreground: 210 40% 98%;
 
-    /* Surface colors */
-    --card: 222 47% 11%;
+    --card: 222 47% 13%;
     --card-foreground: 210 40% 98%;
-    
-    --popover: 222 47% 11%;
+
+    --popover: 222 47% 13%;
     --popover-foreground: 210 40% 98%;
 
-    /* Brand colors - keep same hue, adjusted for dark mode */
-    --primary: 217 91% 60%;
+    --primary: 225 70% 65%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 217 91% 65%;
-    --primary-glow: 217 91% 60%;
+    --primary-hover: 225 70% 70%;
+    --primary-glow: 225 70% 65%;
 
-    --secondary: 258 90% 66%;
+    --secondary: 260 40% 30%;
     --secondary-foreground: 0 0% 100%;
-    --secondary-hover: 258 90% 71%;
+    --secondary-hover: 260 40% 40%;
 
-    /* Neutral colors */
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 217 33% 20%;
+    --muted-foreground: 215 20% 70%;
 
-    --accent: 217 33% 17%;
+    --accent: 217 33% 20%;
     --accent-foreground: 210 40% 98%;
 
-    /* Feedback colors */
-    --destructive: 0 63% 50%;
+    --destructive: 0 63% 60%;
     --destructive-foreground: 0 0% 100%;
-    
-    --success: 142 76% 36%;
+
+    --success: 142 60% 50%;
     --success-foreground: 0 0% 100%;
 
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    /* UI elements */
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 217 91% 60%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 225 70% 65%;
+
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 240 5% 90%;
+    --sidebar-primary: 225 70% 65%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 217 33% 20%;
+    --sidebar-accent-foreground: 240 5% 90%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-ring: 225 70% 65%;
   }
 }
 
@@ -133,21 +135,30 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-semibold tracking-tight;
   }
 }
 
 @layer components {
-  /* Custom shadow styles */
-  .shadow-glow {
-    box-shadow: 0 0 20px hsl(var(--primary-glow) / 0.3);
+
+  /* Custom shadow styles - softer */
+  .shadow-soft {
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
   }
 
-  .shadow-glow-purple {
-    box-shadow: 0 0 20px hsl(var(--secondary) / 0.3);
+  .shadow-glow {
+    box-shadow: 0 0 20px hsl(var(--primary-glow) / 0.2);
   }
 
   /* Smooth transitions */
@@ -155,13 +166,47 @@ All colors MUST be HSL.
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* Gradient backgrounds */
+  /* REMOVED: Gradients replaced with solids or subtle glows */
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
+    @apply bg-primary hover:bg-primary-hover transition-colors;
+    /* background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%); */
   }
 
   .gradient-subtle {
-    background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted)) 100%);
+    @apply bg-muted/50;
+    /* background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted)) 100%); */
+  }
+
+  /* Pastel Background Utilities */
+  .bg-pastel-blue {
+    background-color: hsl(var(--pastel-blue));
+  }
+
+  .bg-pastel-green {
+    background-color: hsl(var(--pastel-green));
+  }
+
+  .bg-pastel-yellow {
+    background-color: hsl(var(--pastel-yellow));
+  }
+
+  .bg-pastel-pink {
+    background-color: hsl(var(--pastel-pink));
+  }
+
+  .bg-pastel-orange {
+    background-color: hsl(var(--pastel-orange));
+  }
+
+  /* Logo Styles */
+  .logo-text {
+    @apply font-bold text-xl tracking-tight text-foreground flex items-center gap-2;
+  }
+
+  .logo-icon {
+    @apply h-8 w-8 rounded-xl bg-primary flex items-center justify-center text-primary-foreground shadow-sm;
+    /* Custom shape/cutout feel */
+    border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
   }
 
   /* Animations */
@@ -170,6 +215,7 @@ All colors MUST be HSL.
       opacity: 0;
       transform: translateY(-10px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -177,17 +223,31 @@ All colors MUST be HSL.
   }
 
   .animate-fade-in {
-    animation: fade-in 0.2s ease-out;
+    animation: fade-in 0.3s ease-out;
+  }
+
+  /* Mobile Responsive Helpers */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .mobile-touch-target {
+    @apply min-h-[44px] min-w-[44px];
   }
 
   /* PDF Text Selection Styling */
   ::selection {
-    background-color: rgba(59, 130, 246, 0.3); /* Blue with 30% opacity */
+    background-color: hsl(var(--primary) / 0.2);
     color: inherit;
   }
 
   ::-moz-selection {
-    background-color: rgba(59, 130, 246, 0.3);
+    background-color: hsl(var(--primary) / 0.2);
     color: inherit;
   }
 }

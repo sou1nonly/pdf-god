@@ -1,143 +1,174 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Auth } from "@supabase/auth-ui-react";
+import { ThemeSupa } from "@supabase/auth-ui-shared";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Navigate } from "react-router-dom";
+import { toast } from "sonner";
+import { FileText, Sparkles, CheckCircle2, Shield, Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export const LoginPage = () => {
-  const { user, loading, signInWithGoogle, signInAnonymously } = useAuth();
-  const navigate = useNavigate();
+const LoginPage = () => {
+    const { user, loading, signInAnonymously } = useAuth();
 
-  useEffect(() => {
-    if (user && !loading) {
-      navigate('/');
+    if (loading) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+        );
     }
-  }, [user, loading, navigate]);
 
-  const handleGoogleSignIn = async () => {
-    try {
-      await signInWithGoogle();
-    } catch (error: any) {
-      toast.error('Failed to sign in', {
-        description: error.message || 'Please try again',
-      });
+    if (user) {
+        return <Navigate to="/" replace />;
     }
-  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+    interface FeatureItemProps {
+        icon: React.ElementType;
+        title: string;
+        description: string;
+    }
+
+    const FeatureItem = ({ icon: Icon, title, description }: FeatureItemProps) => (
+        <div className="flex gap-4 p-4 rounded-xl bg-white/50 border border-white/20 hover:bg-white/80 transition-colors">
+            <div className="shrink-0 h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                <Icon className="h-5 w-5" />
+            </div>
+            <div>
+                <h3 className="font-semibold text-foreground">{title}</h3>
+                <p className="text-sm text-muted-foreground">{description}</p>
+            </div>
+        </div>
     );
-  }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center space-y-4">
-          <div className="flex justify-center">
-            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <FileText className="h-10 w-10 text-primary" />
-            </div>
-          </div>
-          <div>
-            <CardTitle className="text-3xl font-bold">UniPDF Studio</CardTitle>
-            <CardDescription className="text-base mt-2">
-              Professional PDF editor with AI-powered features
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            <Button
-              onClick={handleGoogleSignIn}
-              variant="outline"
-              size="lg"
-              className="w-full h-12 text-base"
-            >
-              <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              Continue with Google
-            </Button>
+    return (
+        <div className="min-h-screen flex flex-col md:flex-row bg-background font-sans">
+            {/* Left Side - Info & Branding */}
+            <div className="w-full md:w-1/2 lg:w-3/5 bg-gradient-to-br from-pastel-blue/20 via-pastel-purple/20 to-pastel-pink/20 p-8 md:p-12 flex flex-col justify-between relative overflow-hidden">
+                {/* Decorative Circles */}
+                <div className="absolute top-0 left-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-secondary/5 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
-              </div>
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-12">
+                        <div className="h-10 w-10 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/20">
+                            <FileText className="h-6 w-6" />
+                        </div>
+                        <span className="font-bold text-2xl tracking-tight">UniPDF Studio</span>
+                    </div>
+
+                    <div className="space-y-6 max-w-lg">
+                        <h1 className="text-4xl md:text-5xl font-bold leading-tight">
+                            Transform your PDFs with <span className="text-primary">AI Power</span>
+                        </h1>
+                        <p className="text-lg text-muted-foreground">
+                            Edit, sign, summarize, and chat with your documents. Experience the future of PDF management today.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-4 mt-12 max-w-lg">
+                        <FeatureItem
+                            icon={Zap}
+                            title="Smart Editing"
+                            description="Edit text and images directly in your browser with pixel-perfect precision."
+                        />
+                        <FeatureItem
+                            icon={Sparkles}
+                            title="AI Assistant"
+                            description="Summarize long documents and get answers to your questions instantly."
+                        />
+                        <FeatureItem
+                            icon={Shield}
+                            title="Secure & Private"
+                            description="Enterprise-grade security keeps your sensitive documents safe."
+                        />
+                    </div>
+                </div>
+
+                <div className="relative z-10 mt-12 text-sm text-muted-foreground">
+                    © 2024 UniPDF Studio. All rights reserved.
+                </div>
             </div>
 
-            <Button
-              onClick={async () => {
-                try {
-                  await signInAnonymously();
-                } catch (error: any) {
-                  toast.error('Failed to continue as guest', {
-                    description: error.message || 'Please try again',
-                  });
-                }
-              }}
-              variant="secondary"
-              size="lg"
-              className="w-full h-12 text-base"
-            >
-              <FileText className="mr-2 h-5 w-5" />
-              Continue as Guest
-            </Button>
-          </div>
+            {/* Right Side - Auth Form */}
+            <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col items-center justify-center p-8 bg-card shadow-soft relative z-20">
+                <div className="w-full max-w-md space-y-8">
+                    <div className="text-center">
+                        <h2 className="text-2xl font-bold mb-2">Welcome Back</h2>
+                        <p className="text-muted-foreground">Sign in to access your workspace</p>
+                    </div>
 
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">
-              By continuing, you agree to our Terms of Service
-              <br />
-              and Privacy Policy
-            </p>
-          </div>
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-border/50">
+                        <Auth
+                            supabaseClient={supabase}
+                            appearance={{
+                                theme: ThemeSupa,
+                                variables: {
+                                    default: {
+                                        colors: {
+                                            brand: 'hsl(var(--primary))',
+                                            brandAccent: 'hsl(var(--primary-hover))',
+                                            inputBackground: 'white',
+                                            inputText: 'hsl(var(--foreground))',
+                                            inputBorder: 'hsl(var(--input))',
+                                            inputBorderHover: 'hsl(var(--ring))',
+                                            inputBorderFocus: 'hsl(var(--ring))',
+                                        },
+                                        radii: {
+                                            borderRadiusButton: '0.75rem',
+                                            buttonBorderRadius: '0.75rem',
+                                            inputBorderRadius: '0.75rem',
+                                        },
+                                    },
+                                },
+                                className: {
+                                    container: 'w-full',
+                                    button: 'w-full px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-medium transition-colors shadow-sm',
+                                    input: 'w-full px-4 py-3 bg-background border border-input rounded-xl focus:ring-2 focus:ring-ring focus:border-transparent transition-all',
+                                    label: 'text-sm font-medium text-foreground mb-1 block',
+                                    loader: 'text-primary',
+                                    anchor: 'text-primary hover:text-primary/80 transition-colors',
+                                },
+                            }}
+                            providers={["google"]}
+                            redirectTo={window.location.origin}
+                            onlyThirdPartyProviders={false}
+                            view="sign_in"
+                            showLinks={true}
+                        />
+                    </div>
 
-          <div className="border-t pt-6">
-            <h3 className="font-semibold mb-3 text-center">Features</h3>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-start">
-                <span className="mr-2">✓</span>
-                <span>Upload and edit PDF documents</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2">✓</span>
-                <span>AI-powered document analysis</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2">✓</span>
-                <span>Secure cloud storage</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2">✓</span>
-                <span>Real-time collaboration</span>
-              </li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-card px-2 text-muted-foreground">
+                                Optional
+                            </span>
+                        </div>
+                    </div>
+
+                    <Button
+                        variant="ghost"
+                        className="w-full h-10 rounded-lg hover:bg-muted font-normal text-sm text-muted-foreground hover:text-foreground transition-all"
+                        onClick={async () => {
+                            try {
+                                await signInAnonymously();
+                                toast.success("Welcome Guest!");
+                            } catch (e: any) {
+                                console.error("Anonymous login error:", e);
+                                toast.error("Guest mode failed", {
+                                    description: e.message || "An unexpected error occurred."
+                                });
+                            }
+                        }}
+                    >
+                        Continue without sign in
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
 };
+
+export default LoginPage;

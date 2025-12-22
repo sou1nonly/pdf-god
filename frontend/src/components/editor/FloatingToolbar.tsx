@@ -59,9 +59,9 @@ interface FloatingToolbarProps {
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpdate }) => {
   const [showColorPicker, setShowColorPicker] = useState(false);
-  
-  const btnClass = "p-1.5 hover:bg-gray-100 rounded text-gray-700 flex items-center justify-center transition-colors";
-  const activeBtnClass = "p-1.5 bg-blue-100 text-blue-700 rounded flex items-center justify-center transition-colors";
+
+  const btnClass = "p-1.5 border border-transparent hover:border-gray-200 hover:bg-gray-50 hover:shadow-sm rounded text-gray-700 flex items-center justify-center transition-all";
+  const activeBtnClass = "p-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded flex items-center justify-center transition-all shadow-sm";
 
   // Check if there's an active text selection
   const hasSelection = useCallback(() => {
@@ -145,14 +145,14 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
   }, [hasSelection, onUpdate, styles.fontSize]);
 
   return (
-    <div 
+    <div
       className="flex items-center gap-1 p-1.5 bg-white rounded-lg shadow-xl border border-gray-200"
       onMouseDown={(e) => e.preventDefault()} // Prevent losing selection
       onClick={(e) => e.stopPropagation()}
     >
       {/* Font Family - Extended List */}
-      <select 
-        value={styles.fontFamily?.split(',')[0].replace(/['"]/g, '') || 'Inter'} 
+      <select
+        value={styles.fontFamily?.split(',')[0].replace(/['"]/g, '') || 'Inter'}
         onChange={(e) => handleFontChange(e.target.value)}
         className="h-7 text-xs border border-gray-200 rounded px-2 bg-white focus:outline-none focus:border-blue-500 max-w-[100px]"
         onMouseDown={(e) => e.stopPropagation()}
@@ -167,7 +167,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
       <div className="w-px h-4 bg-gray-200 mx-1" />
 
       {/* Font Size */}
-      <button 
+      <button
         className={btnClass}
         onClick={() => handleFontSizeChange(-1)}
         title="Decrease font size"
@@ -175,7 +175,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
         <icons.Minus size={14} />
       </button>
       <span className="text-xs w-6 text-center font-medium">{Math.round(styles.fontSize)}</span>
-      <button 
+      <button
         className={btnClass}
         onClick={() => handleFontSizeChange(1)}
         title="Increase font size"
@@ -186,23 +186,23 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
       <div className="w-px h-4 bg-gray-200 mx-1" />
 
       {/* Text Formatting - Works on Selection */}
-      <button 
+      <button
         className={styles.fontWeight >= 700 ? activeBtnClass : btnClass}
         onClick={handleBold}
         title="Bold (Ctrl+B) - Select text first for inline formatting"
       >
         <icons.Bold size={14} />
       </button>
-      
-      <button 
+
+      <button
         className={styles.italic ? activeBtnClass : btnClass}
         onClick={handleItalic}
         title="Italic (Ctrl+I) - Select text first for inline formatting"
       >
         <icons.Italic size={14} />
       </button>
-      
-      <button 
+
+      <button
         className={styles.underline ? activeBtnClass : btnClass}
         onClick={handleUnderline}
         title="Underline (Ctrl+U) - Select text first for inline formatting"
@@ -210,7 +210,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
         <icons.Underline size={14} />
       </button>
 
-      <button 
+      <button
         className={btnClass}
         onClick={handleStrikethrough}
         title="Strikethrough - Select text first"
@@ -221,21 +221,21 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
       <div className="w-px h-4 bg-gray-200 mx-1" />
 
       {/* Alignment - Always applies to whole block */}
-      <button 
+      <button
         className={styles.align === 'left' ? activeBtnClass : btnClass}
         onClick={() => onUpdate({ align: 'left' })}
         title="Align Left"
       >
         <icons.AlignLeft size={14} />
       </button>
-      <button 
+      <button
         className={styles.align === 'center' ? activeBtnClass : btnClass}
         onClick={() => onUpdate({ align: 'center' })}
         title="Align Center"
       >
         <icons.AlignCenter size={14} />
       </button>
-      <button 
+      <button
         className={styles.align === 'right' ? activeBtnClass : btnClass}
         onClick={() => onUpdate({ align: 'right' })}
         title="Align Right"
@@ -254,15 +254,15 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
         >
           <div className="flex flex-col items-center">
             <icons.Palette size={14} />
-            <div 
-              className="w-4 h-1 rounded-full mt-0.5" 
+            <div
+              className="w-4 h-1 rounded-full mt-0.5"
               style={{ backgroundColor: styles.color || '#000000' }}
             />
           </div>
         </button>
-        
+
         {showColorPicker && (
-          <div 
+          <div
             className="absolute top-full left-0 mt-1 p-2 bg-white rounded-lg shadow-xl border border-gray-200 z-50"
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -270,18 +270,17 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ styles, onUpda
               {PRESET_COLORS.map((color) => (
                 <button
                   key={color}
-                  className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${
-                    styles.color === color ? 'border-blue-500' : 'border-gray-200'
-                  }`}
+                  className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${styles.color === color ? 'border-blue-500' : 'border-gray-200'
+                    }`}
                   style={{ backgroundColor: color }}
                   onClick={() => handleColorChange(color)}
                 />
               ))}
             </div>
             <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-              <input 
-                type="color" 
-                value={styles.color || '#000000'} 
+              <input
+                type="color"
+                value={styles.color || '#000000'}
                 onChange={(e) => handleColorChange(e.target.value)}
                 className="w-6 h-6 cursor-pointer border-0 p-0"
               />

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { setAccessToken, clearTokens } from '@/api/client';
@@ -15,7 +15,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,11 +51,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signInAnonymously = async () => {
-    const { error } = await supabase.auth.signInAnonymously();
-    if (error) {
-      console.error('Error signing in anonymously:', error);
-      throw error;
-    }
+    // Local guest mode - no Supabase interaction
+    const guestUser: User = {
+      id: 'guest',
+      aud: 'authenticated',
+      role: 'authenticated',
+      email: 'guest@local',
+      email_confirmed_at: new Date().toISOString(),
+      phone: '',
+      confirmed_at: new Date().toISOString(),
+      last_sign_in_at: new Date().toISOString(),
+      app_metadata: { provider: 'email' },
+      user_metadata: { full_name: 'Guest User' },
+      identities: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_anonymous: true
+    };
+
+    setUser(guestUser);
+    // Create a dummy session
+    const guestSession: Session = {
+      access_token: 'guest-token',
+      refresh_token: 'guest-refresh-token',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: guestUser
+    };
+    setSession(guestSession);
+    setLoading(false);
   };
 
   const signInWithGoogle = async () => {

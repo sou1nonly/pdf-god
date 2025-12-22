@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { FileText, ZoomIn, ZoomOut, Upload, Eye, Edit } from "lucide-react";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftSidebar } from "@/components/layout/LeftSidebar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
+import { cn } from "@/lib/utils";
+
 import { TopBar } from "@/components/layout/TopBar";
 import { PDFViewer } from "@/components/document/PDFViewer";
 import { HydratedPageView } from "@/components/editor/HydratedPageView";
@@ -11,6 +13,7 @@ import { ProcessingOverlay } from "@/components/editor/ProcessingOverlay";
 import { CanvaToolbar } from "@/components/editor/CanvaToolbar";
 import { ColorPanel } from "@/components/editor/CanvaToolbar";
 import { LayersPanel, Layer } from "@/components/editor/MultiLayerCanvas";
+import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
 import { extractTextFromPages } from "@/lib/ai/text-extraction";
 import { saveAnnotations, loadAnnotations } from "@/lib/annotations-service";
@@ -27,18 +30,24 @@ const EditorPage = () => {
 
   // Refs for capturing page canvases for export
   const pageContainerRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
 
   const [zoom, setZoom] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
   const [fileName, setFileName] = useState("Untitled Document");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
+  const [mobileRightOpen, setMobileRightOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<DrawingTool>('select');
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
+  const [zoomMode, setZoomMode] = useState<'fit-width' | 'original' | 'custom'>('fit-width');
   const [isLoading, setIsLoading] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [rotation, setRotation] = useState(0);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState(0);
 
   // Drawing state
@@ -262,20 +271,46 @@ const EditorPage = () => {
   // Fetch document on load
   useEffect(() => {
     const loadDocument = async () => {
+      // Check for local file from navigation state (Guest Mode)
+      const state = location.state as { fileUrl?: string; fileName?: string; isLocal?: boolean } | null;
+
+      if (state?.fileUrl && state?.isLocal) {
+        console.log("Loading local file (Guest Mode):", state.fileName);
+        try {
+          setIsLoading(true);
+          setFileName(state.fileName || "Untitled.pdf");
+          setPdfUrl(state.fileUrl);
+
+          // Fetch blob from object URL to process
+          const response = await fetch(state.fileUrl);
+          const blob = await response.blob();
+
+          await processFile(blob);
+          toast.success("Guest document loaded");
+        } catch (err: any) {
+          console.error("Local load error:", err);
+          toast.error("Failed to load local file");
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+
       if (!documentId) {
-        // If no ID, redirect to documents list
-        navigate('/documents');
+        // If no ID and no local file, redirect to documents list
+        navigate('/');
         return;
       }
 
       setIsLoading(true);
       try {
         // 1. Get metadata
+        // Explicitly cast or type the response if automatic inference fails
         const { data: doc, error } = await supabase
           .from('documents')
           .select('*')
           .eq('id', documentId)
-          .single();
+          .single<any>(); // Using any to bypass strict typing issues temporarily, or import proper Database type
 
         if (error) throw error;
         if (doc) {
@@ -319,25 +354,65 @@ const EditorPage = () => {
     };
   }, [documentId]); // Removed processFile from deps to avoid loops if it's not stable
 
-  // Auto-collapse sidebars on mobile/tablet
+  // Auto-collapse sidebars on mobile
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 1024) {
         setLeftSidebarOpen(false);
         setRightSidebarOpen(false);
-      } else {
-        setLeftSidebarOpen(true);
-        setRightSidebarOpen(true);
       }
     };
-
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 10, 500));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 10, 10));
+  // Measure available width for smart scaling
+  useEffect(() => {
+    if (!scrollContainerRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (entry) {
+        // Subtract 48px for padding (p-6 is 24px * 2) roughly, or just use content box
+        // The scroll container has p-2 sm:p-4 md:p-6 which varies
+        // Let's use the width directly and let HydratedPageView handle?
+        // No, we decided to handle padding here.
+        // Padding is on the scroll container itself: p-2 sm:p-4 md:p-6
+        // AND on the pageContainer: py-8 px-4
+        // Logic:
+        // Scroll Container (p-6) -> Child (w-full) -> Child has px-4.
+        // Total padding = p-6 (24px*2) + px-4 (16px*2) = 48+32 = 80px?
+        // Wait, the scroll container HAS padding?
+        // Line 688: "bg-muted/30 relative p-2 sm:p-4 md:p-6"
+        // So content width is W - padding.
+        // Then inside renderEditMode: "w-full py-8 px-4".
+        // So width available to page is (W - scrollPadding) - pagePadding.
+        // Let's rely on clientWidth/contentRect of scroll view?
+        setAvailableWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(scrollContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Scroll to page in Edit Mode when currentPage changes (e.g. Nav Bar click)
+  useEffect(() => {
+    if (viewMode === 'edit') {
+      const el = document.getElementById(`page-${currentPage}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
+    }
+  }, [currentPage, viewMode]);
+
+  const handleZoomIn = () => {
+    setZoom((prev) => Math.min(prev + 10, 500));
+    setZoomMode('custom');
+  };
+  const handleZoomOut = () => {
+    setZoom((prev) => Math.max(prev - 10, 10));
+    setZoomMode('custom');
+  };
 
   const handleSave = async () => {
     if (!documentId) {
@@ -468,6 +543,71 @@ const EditorPage = () => {
     }
   };
 
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+
+      // Save: Ctrl+S
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+        return;
+      }
+
+      // Undo: Ctrl+Z
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+        return;
+      }
+
+      // Redo: Ctrl+Y
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // Zoom In: Ctrl + or Ctrl =
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        handleZoomIn();
+        return;
+      }
+
+      // Zoom Out: Ctrl -
+      if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+        e.preventDefault();
+        handleZoomOut();
+        return;
+      }
+
+      // Delete/Backspace: Delete selected annotation
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const canvas = getActiveLayerCanvas();
+        if (canvas && canvas.deleteSelected) {
+          canvas.deleteSelected();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSave, handleUndo, handleRedo, handleZoomIn, handleZoomOut, getActiveLayerCanvas]);
+
   // Determine what to show in Edit mode
   const renderEditMode = () => {
     // Show processing overlay while hydrating
@@ -489,12 +629,14 @@ const EditorPage = () => {
     // Show the editable pages
     if (status === 'complete' && pages && pages.length > 0) {
       return (
-        <div ref={pageContainerRef} className="flex flex-col items-center gap-12 w-full py-8 px-4">
+        <div ref={pageContainerRef} className="flex flex-col items-center gap-4 w-full py-4 px-4 min-w-0">
           {pages.map(page => (
             <div key={page.pageIndex} data-page-canvas data-page-index={page.pageIndex}>
               <HydratedPageView
                 page={page}
                 scale={zoom / 100}
+                fitToContainer={zoomMode === 'fit-width'}
+                containerWidth={Math.max(0, availableWidth - 32)} // Subtract px-4 (32px) from page container. contentRect already handles scroll container padding.
                 drawingTool={activeTool}
                 strokeColor={strokeColor}
                 strokeWidth={strokeWidth}
@@ -508,6 +650,7 @@ const EditorPage = () => {
                 onLayerObjectsChange={(layerId, objects) => handleLayerObjectsChange(layerId, page.pageIndex, objects)}
                 onHistoryChange={handleHistoryChange}
                 onLayerCanvasReady={(layerId, ref) => handleLayerCanvasReady(page.pageIndex, layerId, ref)}
+                onZoomChange={setZoom}
               />
             </div>
           ))}
@@ -531,124 +674,196 @@ const EditorPage = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden bg-background">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
+      {/* Full-width TopBar */}
       <TopBar
         fileName={fileName}
         onFileNameChange={setFileName}
         onSave={handleSave}
         onDownload={handleDownload}
-        onBack={() => navigate('/documents')}
+        onBack={() => navigate('/')}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         processingStatus={status}
         processingProgress={progress}
         hasUnsavedChanges={hasUnsavedChanges}
         isSaving={isSaving}
+        onMobileLeftToggle={() => setMobileLeftOpen(true)}
+        onMobileRightToggle={() => setMobileRightOpen(true)}
       />
 
+      {/* Body: Sidebars + Content */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Sidebar - Only show in preview mode */}
+        {/* Left Sidebar - Desktop */}
         {viewMode === 'preview' && (
-          <LeftSidebar
-            isOpen={leftSidebarOpen}
-            onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)}
-            pdfDocument={pdfDocument}
-            currentPage={currentPage}
-            onPageChange={setCurrentPage}
-          />
+          <div
+            className={cn(
+              "hidden md:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out border-r overflow-hidden bg-background",
+              leftSidebarOpen ? "w-52" : "w-12"
+            )}
+          >
+            <LeftSidebar
+              isOpen={leftSidebarOpen}
+              onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)}
+              pdfDocument={pdfDocument}
+              currentPage={currentPage}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         )}
 
-        <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-100/50">
-          <Toolbar
-            zoom={zoom}
-            onZoomChange={setZoom}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            onRotate={() => setRotation(r => (r + 90) % 360)}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            viewMode={viewMode}
-            activeTool={activeTool}
-            onToolChange={setActiveTool}
-            onClearAll={handleClearAll}
-          />          <div className="flex-1 overflow-auto flex justify-center bg-gradient-to-b from-gray-100 to-gray-200 relative">
-            {viewMode === 'preview' ? (
-              <PDFViewer
-                url={pdfUrl}
-                scale={zoom}
-                currentPage={currentPage}
-                onPageChange={setCurrentPage}
-                totalPages={totalPages}
-                onDocumentLoad={handleDocumentLoad}
-                rotation={rotation}
-              />
-            ) : (
-              <>
-                {/* Canva-style left toolbar */}
-                {status === 'complete' && (
-                  <CanvaToolbar
-                    activeTool={activeTool}
-                    onToolChange={setActiveTool}
-                    canUndo={canUndo}
-                    canRedo={canRedo}
-                    onUndo={handleUndo}
-                    onRedo={handleRedo}
-                    onClearAll={handleClearAll}
-                    onExport={handleDownload}
+        {/* Center Content */}
+        <div className="flex-1 flex flex-col min-w-0 relative h-full">
+          <main className="flex-1 flex flex-col relative overflow-hidden bg-background">
+            <Toolbar
+              zoom={zoom}
+              onZoomChange={(z) => {
+                setZoom(z);
+                setZoomMode('custom');
+              }}
+              zoomMode={zoomMode}
+              onZoomModeChange={(mode) => {
+                setZoomMode(mode);
+                if (mode === 'original') setZoom(100);
+              }}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              onRotate={() => setRotation(r => (r + 90) % 360)}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              activeTool={activeTool}
+              onToolChange={setActiveTool}
+              onClearAll={handleClearAll}
+            />
+            <div
+              ref={scrollContainerRef}
+              className={cn(
+                "flex-1 flex items-start bg-muted/30 relative p-2 sm:p-4 md:p-6",
+                zoomMode === 'fit-width' ? "overflow-y-auto overflow-x-hidden" : "overflow-auto"
+              )}
+            >
+              <div className="m-auto min-w-fit w-full flex flex-col items-center">
+                {viewMode === 'preview' ? (
+                  <PDFViewer
+                    url={pdfUrl}
+                    scale={zoom}
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
+                    totalPages={totalPages}
+                    onDocumentLoad={handleDocumentLoad}
+                    rotation={rotation}
+                    fitToWidth={zoomMode === 'fit-width'}
+                    containerWidth={Math.max(0, availableWidth - 52)}
+                    onZoomChange={setZoom}
                   />
-                )}
+                ) : (
+                  <>
 
-                {/* Main edit area */}
-                {renderEditMode()}
 
-                {/* Color panel - bottom center when drawing tool active */}
-                {status === 'complete' && activeTool !== 'select' && (
-                  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
-                    <ColorPanel
-                      strokeColor={strokeColor}
-                      onStrokeColorChange={setStrokeColor}
-                      fillColor={fillColor}
-                      onFillColorChange={setFillColor}
-                      strokeWidth={strokeWidth}
-                      onStrokeWidthChange={setStrokeWidth}
-                      opacity={opacity}
-                      onOpacityChange={setOpacity}
-                    />
-                  </div>
-                )}
+                    {/* Main edit area */}
+                    {renderEditMode()}
 
-                {/* Layers Panel - positioned top-right near sidebar */}
-                {status === 'complete' && (
-                  <div className="absolute top-16 right-4 z-40">
-                    <LayersPanel
-                      layers={layers}
-                      activeLayerId={activeLayerId}
-                      onSelectLayer={handleLayerSelect}
-                      onAddLayer={handleLayerAdd}
-                      onDeleteLayer={handleLayerDelete}
-                      onToggleVisibility={(id) => handleLayerVisibilityChange(id, !layers.find(l => l.id === id)?.visible)}
-                      onToggleLock={(id) => handleLayerLockChange(id, !layers.find(l => l.id === id)?.locked)}
-                      onRenameLayer={handleLayerRename}
-                      onReorderLayer={handleLayerReorder}
-                    />
-                  </div>
+
+
+
+                  </>
                 )}
-              </>
-            )}
+              </div>
+            </div>
+          </main>
+        </div>
+
+        {/* Right Sidebar - Desktop */}
+        <div
+          className={cn(
+            "hidden lg:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out border-l overflow-hidden bg-background",
+            rightSidebarOpen ? "w-80" : "w-14"
+          )}
+        >
+          <RightSidebar
+            isOpen={rightSidebarOpen}
+            onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+            documentText={documentText}
+          />
+        </div>
+      </div>
+
+      {/* Floating UI Elements - Fixed positioning outside scroll container */}
+      {status === 'complete' && viewMode === 'edit' && (
+        <div className="fixed inset-0 z-[9999] pointer-events-none">
+          <div className="pointer-events-auto">
+            <CanvaToolbar
+              activeTool={activeTool}
+              onToolChange={setActiveTool}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              onClearAll={handleClearAll}
+              onExport={handleDownload}
+            />
           </div>
-        </main>
 
+          {(activeTool === 'rect' || activeTool === 'circle' || activeTool === 'draw' || activeTool === 'arrow' || activeTool === 'line') && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4 pointer-events-auto">
+              <ColorPanel
+                strokeColor={strokeColor}
+                onStrokeColorChange={setStrokeColor}
+                fillColor={fillColor}
+                onFillColorChange={setFillColor}
+                strokeWidth={strokeWidth}
+                onStrokeWidthChange={setStrokeWidth}
+                opacity={opacity}
+                onOpacityChange={setOpacity}
+              />
+            </div>
+          )}
+
+          <div
+            className="fixed transition-all duration-300 ease-in-out hidden lg:block pointer-events-auto"
+            style={{ top: '8rem', right: rightSidebarOpen ? '22rem' : '6rem' }}
+          >
+            <LayersPanel
+              layers={layers}
+              activeLayerId={activeLayerId}
+              onSelectLayer={handleLayerSelect}
+              onAddLayer={handleLayerAdd}
+              onDeleteLayer={handleLayerDelete}
+              onToggleVisibility={(id) => handleLayerVisibilityChange(id, !layers.find(l => l.id === id)?.visible)}
+              onToggleLock={(id) => handleLayerLockChange(id, !layers.find(l => l.id === id)?.locked)}
+              onRenameLayer={handleLayerRename}
+              onReorderLayer={handleLayerReorder}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Drawers */}
+      <MobileDrawer isOpen={mobileLeftOpen} onOpenChange={setMobileLeftOpen} side="left">
+        <LeftSidebar
+          isOpen={true}
+          onToggle={() => setMobileLeftOpen(false)}
+          pdfDocument={pdfDocument}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+        />
+      </MobileDrawer>
+
+      <MobileDrawer isOpen={mobileRightOpen} onOpenChange={setMobileRightOpen} side="right">
         <RightSidebar
-          isOpen={rightSidebarOpen}
-          onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+          isOpen={true}
+          onToggle={() => setMobileRightOpen(false)}
           documentText={documentText}
         />
-      </div>
+      </MobileDrawer>
     </div>
   );
 };
 
 export default EditorPage;
+
