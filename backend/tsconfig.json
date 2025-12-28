@@ -1,8 +1,8 @@
 {
     "compilerOptions": {
         "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "bundler",
+        "module": "CommonJS",
+        "moduleResolution": "Node",
         "lib": [
             "ES2022"
         ],
@@ -15,25 +15,7 @@
         "resolveJsonModule": true,
         "declaration": true,
         "declarationMap": true,
-        "sourceMap": true,
-        "baseUrl": "./src",
-        "paths": {
-            "@/*": [
-                "./*"
-            ],
-            "@config/*": [
-                "./config/*"
-            ],
-            "@modules/*": [
-                "./modules/*"
-            ],
-            "@middleware/*": [
-                "./middleware/*"
-            ],
-            "@shared/*": [
-                "./shared/*"
-            ]
-        }
+        "sourceMap": true
     },
     "include": [
         "src/**/*"
