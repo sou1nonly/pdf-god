@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Lamina Frontend - React + Vite",
+  "engines": {
+    "node": ">=20.0.0 <24.0.0"
+  },
   "scripts": {
     "dev": "vite --port 5173",
     "build": "vite build",
