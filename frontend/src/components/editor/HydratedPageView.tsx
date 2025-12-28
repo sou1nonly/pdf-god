@@ -1,103 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { HydratedPage, TextBlockStyles, TextBlock as TextBlockType, ImageBlock as ImageBlockType } from '@/types/hydration';
-import { FloatingToolbar } from './FloatingToolbar';
-import type { DrawingTool } from './DrawingCanvas';
-import { LayerCanvas, Layer } from './MultiLayerCanvas';
-
-// Cast icons to fix TS issues
-import { GripVertical, Type, Image as ImageIcon } from 'lucide-react';
-const icons = { GripVertical: GripVertical as any, Type: Type as any, Image: ImageIcon as any };
-
-// Snapping configuration - subtle snapping
-const SNAP_THRESHOLD = 0.7; // Smaller threshold for subtle snapping
-
-// Context for sharing snap guides across blocks
-interface SnapGuideContextType {
-  activeGuides: { type: 'h' | 'v'; position: number }[];
-  setActiveGuides: (guides: { type: 'h' | 'v'; position: number }[]) => void;
-  allBlocks: { id: string; box: [number, number, number, number] }[];
-}
-
-const SnapGuideContext = createContext<SnapGuideContextType>({
-  activeGuides: [],
-  setActiveGuides: () => { },
-  allBlocks: [],
-});
-
-// Calculate snap points for a given position
-function getSnapPoints(
-  position: number,
-  size: number,
-  allBlocks: { id: string; box: [number, number, number, number] }[],
-  currentBlockId: string,
-  isHorizontal: boolean
-): { snapTo: number | null; guides: { type: 'h' | 'v'; position: number }[] } {
-  const guides: { type: 'h' | 'v'; position: number }[] = [];
-  const guideType = isHorizontal ? 'v' : 'h';
-
-  // Page snap points
-  const pageSnapPoints = [0, 50, 100]; // Left/Top, Center, Right/Bottom
-
-  // Element edges
-  const elementStart = position;
-  const elementCenter = position + size / 2;
-  const elementEnd = position + size;
-
-  let snapTo: number | null = null;
-
-  // Check page snap points
-  for (const snap of pageSnapPoints) {
-    // Snap element start to page point
-    if (Math.abs(elementStart - snap) < SNAP_THRESHOLD) {
-      snapTo = snap;
-      guides.push({ type: guideType, position: snap });
-    }
-    // Snap element center to page point
-    else if (Math.abs(elementCenter - snap) < SNAP_THRESHOLD) {
-      snapTo = snap - size / 2;
-      guides.push({ type: guideType, position: snap });
-    }
-    // Snap element end to page point
-    else if (Math.abs(elementEnd - snap) < SNAP_THRESHOLD) {
-      snapTo = snap - size;
-      guides.push({ type: guideType, position: snap });
-    }
-  }
-
-  // Check other blocks for alignment
-  for (const block of allBlocks) {
-    if (block.id === currentBlockId) continue;
-
-    const [bx, by, bw, bh] = block.box;
-    const blockStart = isHorizontal ? bx : by;
-    const blockSize = isHorizontal ? bw : bh;
-    const blockCenter = blockStart + blockSize / 2;
-    const blockEnd = blockStart + blockSize;
-
-    // Snap to other block's start
-    if (Math.abs(elementStart - blockStart) < SNAP_THRESHOLD) {
-      snapTo = blockStart;
-      guides.push({ type: guideType, position: blockStart });
-    }
-    // Snap to other block's center
-    else if (Math.abs(elementCenter - blockCenter) < SNAP_THRESHOLD) {
-      snapTo = blockCenter - size / 2;
-      guides.push({ type: guideType, position: blockCenter });
-    }
-    // Snap to other block's end
-    else if (Math.abs(elementStart - blockEnd) < SNAP_THRESHOLD) {
-      snapTo = blockEnd;
-      guides.push({ type: guideType, position: blockEnd });
-    }
-    // Snap element end to other block's start
-    else if (Math.abs(elementEnd - blockStart) < SNAP_THRESHOLD) {
-      snapTo = blockStart - size;
-      guides.push({ type: guideType, position: blockStart });
-    }
-  }
-
-  return { snapTo, guides };
-}
+import type { DrawingTool } from './types';
+import { LayerCanvas } from './canvas/LayerCanvas';
+import { Layer } from './types';
+import { TextBlock } from './blocks/TextBlock';
+import { ImageBlock } from './blocks/ImageBlock';
+import { SnapGuideContext } from './context/SnapGuideContext';
 
 interface HydratedPageWithUrl extends HydratedPage {
   backgroundUrl?: string;
@@ -121,377 +29,20 @@ interface HydratedPageViewProps {
   onDrawingChange?: (objects: any[]) => void;
   onLayerObjectsChange?: (layerId: string, objects: any[]) => void; // EditorPage adds pageIndex
   onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
+  onSelectionChange?: (hasSelection: boolean) => void;
+  onToolChange?: (tool: DrawingTool) => void;
+  onTextEditingChange?: (isEditing: boolean, blockId?: string, styles?: any) => void;
+  onAddTextBlock?: (box: [number, number, number, number], customId?: string) => void; // For text tool to create new PDF text blocks
   activeLayerId?: string;
   layers?: Layer[];
   onLayerCanvasReady?: (layerId: string, ref: any) => void;
   onZoomChange?: (zoom: number) => void;
+  deselectSignal?: number;
+  signatureToInsert?: string | null;
+  onSignatureInserted?: () => void;
+  linkToApply?: { url: string } | null;
+  onLinkApplied?: () => void;
 }
-
-// Clean Text Block Component with proper paragraph rendering
-const TextBlock = React.memo(({
-  block,
-  scale,
-  pageWidth,
-  pageHeight,
-  isSelected,
-  onSelect,
-  onUpdateContent,
-  onResize,
-  onTextSelectionChange
-}: {
-  block: TextBlockType;
-  scale: number;
-  pageWidth: number;
-  pageHeight: number;
-  isSelected: boolean;
-  onSelect: () => void;
-  onUpdateContent: (html: string) => void;
-  onResize?: (newBox: [number, number, number, number]) => void;
-  onTextSelectionChange?: (hasSelection: boolean) => void;
-}) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState<string | null>(null);
-  const [localBox, setLocalBox] = useState<[number, number, number, number]>(block.box);
-  const [hasTextSelection, setHasTextSelection] = useState(false);
-  const elementRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ x: number; y: number; box: [number, number, number, number] } | null>(null);
-
-  // Get snap context
-  const { setActiveGuides, allBlocks } = useContext(SnapGuideContext);
-
-  // Sync local box with block.box when it changes externally
-  useEffect(() => {
-    setLocalBox(block.box);
-  }, [block.box]);
-
-  // Track text selection changes
-  useEffect(() => {
-    const checkSelection = () => {
-      if (!isEditing || !elementRef.current) {
-        if (hasTextSelection) {
-          setHasTextSelection(false);
-          onTextSelectionChange?.(false);
-        }
-        return;
-      }
-
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const isInElement = elementRef.current.contains(range.commonAncestorContainer);
-        const hasSelection = isInElement && !range.collapsed && selection.toString().length > 0;
-
-        if (hasSelection !== hasTextSelection) {
-          setHasTextSelection(hasSelection);
-          onTextSelectionChange?.(hasSelection);
-        }
-      }
-    };
-
-    document.addEventListener('selectionchange', checkSelection);
-    return () => document.removeEventListener('selectionchange', checkSelection);
-  }, [isEditing, hasTextSelection, onTextSelectionChange]);
-
-  const [x, y, w, h] = localBox;
-
-  // Skip empty blocks
-  if (!block.html || block.html.trim().length === 0) return null;
-
-  const baseFontSize = block.styles.fontSize || 12;
-  const scaledFontSize = baseFontSize * scale;
-
-  const isHeader = block.meta?.isHeader || baseFontSize > 14;
-  const isListItem = block.meta?.isListItem;
-
-  const textDecorations: string[] = [];
-  if (block.styles.underline) textDecorations.push('underline');
-  if ((block.styles as any).strikethrough) textDecorations.push('line-through');
-  const textDecoration = textDecorations.length > 0 ? textDecorations.join(' ') : 'none';
-
-  // Handle mouse down for dragging with snapping
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isEditing || !isSelected) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-    dragStartRef.current = { x: e.clientX, y: e.clientY, box: [...localBox] as [number, number, number, number] };
-
-    const handleMouseMove = (moveE: MouseEvent) => {
-      if (!dragStartRef.current) return;
-      const dx = ((moveE.clientX - dragStartRef.current.x) / pageWidth) * 100;
-      const dy = ((moveE.clientY - dragStartRef.current.y) / pageHeight) * 100;
-      let newX = Math.max(0, Math.min(100 - dragStartRef.current.box[2], dragStartRef.current.box[0] + dx));
-      let newY = Math.max(0, Math.min(100 - dragStartRef.current.box[3], dragStartRef.current.box[1] + dy));
-
-      // Apply snapping
-      const blockW = dragStartRef.current.box[2];
-      const blockH = dragStartRef.current.box[3];
-
-      const hSnap = getSnapPoints(newX, blockW, allBlocks, block.id, true);
-      const vSnap = getSnapPoints(newY, blockH, allBlocks, block.id, false);
-
-      if (hSnap.snapTo !== null) newX = hSnap.snapTo;
-      if (vSnap.snapTo !== null) newY = vSnap.snapTo;
-
-      // Show guides
-      setActiveGuides([...hSnap.guides, ...vSnap.guides]);
-
-      setLocalBox([newX, newY, blockW, blockH]);
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      setActiveGuides([]); // Clear guides on release
-      if (onResize && dragStartRef.current) {
-        onResize(localBox);
-      }
-      dragStartRef.current = null;
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  };
-
-  // Handle resize from corners/edges
-  const handleResizeStart = (e: React.MouseEvent, handle: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsResizing(handle);
-    dragStartRef.current = { x: e.clientX, y: e.clientY, box: [...localBox] as [number, number, number, number] };
-
-    const handleMouseMove = (moveE: MouseEvent) => {
-      if (!dragStartRef.current) return;
-      const dx = ((moveE.clientX - dragStartRef.current.x) / pageWidth) * 100;
-      const dy = ((moveE.clientY - dragStartRef.current.y) / pageHeight) * 100;
-      const [origX, origY, origW, origH] = dragStartRef.current.box;
-
-      let newX = origX, newY = origY, newW = origW, newH = origH;
-
-      // Handle different resize directions
-      if (handle.includes('e')) { newW = Math.max(5, origW + dx); }
-      if (handle.includes('w')) { newX = origX + dx; newW = Math.max(5, origW - dx); }
-      if (handle.includes('s')) { newH = Math.max(2, origH + dy); }
-      if (handle.includes('n')) { newY = origY + dy; newH = Math.max(2, origH - dy); }
-
-      // Clamp to page bounds
-      newX = Math.max(0, newX);
-      newY = Math.max(0, newY);
-      if (newX + newW > 100) newW = 100 - newX;
-      if (newY + newH > 100) newH = 100 - newY;
-
-      setLocalBox([newX, newY, newW, newH]);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(null);
-      if (onResize) {
-        onResize(localBox);
-      }
-      dragStartRef.current = null;
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  };
-
-  return (
-    <div
-      ref={elementRef}
-      className={`
-        absolute
-        ${isSelected ? 'ring-2 ring-blue-500 z-30' : 'hover:bg-blue-50/30 z-10'}
-        ${isEditing ? 'cursor-text bg-white shadow-lg z-40' : 'overflow-visible'}
-        ${isResizing ? 'overflow-visible' : ''}
-        ${isDragging ? 'cursor-move' : ''}
-        ${!isEditing && !isDragging && isSelected ? 'cursor-move' : ''}
-        ${!isSelected ? 'cursor-pointer' : ''}
-      `}
-      style={{
-        left: `${x}%`,
-        top: `${y}%`,
-        width: `${w}%`,
-        minHeight: `${h}%`,
-        height: isResizing ? `${h}%` : 'auto', // Fixed height during resize, auto otherwise
-        fontFamily: block.styles.fontFamily || 'Inter, system-ui, sans-serif',
-        fontSize: `${scaledFontSize}px`,
-        fontWeight: isHeader ? 700 : (block.styles.fontWeight || 400),
-        fontStyle: block.styles.italic ? 'italic' : 'normal',
-        textDecoration: textDecoration,
-        color: block.styles.color || '#1a1a1a',
-        textAlign: (block.styles.align as any) || 'left',
-        lineHeight: block.styles.lineHeight || (isHeader ? 1.2 : 1.4),
-        letterSpacing: isHeader ? '-0.01em' : '0',
-        padding: '0px', // Removed padding to prevent layout shifts
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        borderRadius: '2px',
-        backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
-      }}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!isSelected) onSelect();
-      }}
-      onMouseDown={handleMouseDown}
-      onDoubleClick={() => {
-        // Set the innerHTML BEFORE enabling contentEditable
-        // This ensures content is visible during editing without duplication
-        if (elementRef.current) {
-          elementRef.current.innerHTML = block.html;
-        }
-        setIsEditing(true);
-        setTimeout(() => {
-          elementRef.current?.focus();
-          // Place cursor at end
-          const selection = window.getSelection();
-          const range = document.createRange();
-          if (elementRef.current && selection) {
-            range.selectNodeContents(elementRef.current);
-            range.collapse(false);
-            selection.removeAllRanges();
-            selection.addRange(range);
-          }
-        }, 0);
-      }}
-      contentEditable={isEditing}
-      suppressContentEditableWarning
-      onBlur={(e) => {
-        setIsEditing(false);
-        // Use innerHTML to preserve inline formatting (bold, italic, color, etc.)
-        onUpdateContent(e.currentTarget.innerHTML);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          setIsEditing(false);
-          elementRef.current?.blur();
-        }
-        // Support keyboard shortcuts for formatting
-        if (e.ctrlKey || e.metaKey) {
-          if (e.key === 'b') {
-            e.preventDefault();
-            document.execCommand('bold');
-          } else if (e.key === 'i') {
-            e.preventDefault();
-            document.execCommand('italic');
-          } else if (e.key === 'u') {
-            e.preventDefault();
-            document.execCommand('underline');
-          }
-        }
-      }}
-    >
-      {/* Only render HTML content when NOT editing - contentEditable handles its own content when editing */}
-      {!isEditing && (
-        isListItem ? (
-          <span className="flex">
-            <span className="mr-2 flex-shrink-0">{block.html.match(/^[\u2022\-\*]|\d+[\.\)]|[a-zA-Z][\.\)]/)?.[0] || '•'}</span>
-            <span dangerouslySetInnerHTML={{ __html: block.html.replace(/^[\u2022\-\*]\s*|\d+[\.\)]\s*|[a-zA-Z][\.\)]\s*/, '') }} />
-          </span>
-        ) : (
-          <span dangerouslySetInnerHTML={{ __html: block.html }} />
-        )
-      )}
-
-      {/* Resize handles - only show when selected and not editing */}
-      {isSelected && !isEditing && (
-        <>
-          {/* Corner handles */}
-          <div className="absolute -top-1 -left-1 w-2 h-2 bg-blue-500 cursor-nw-resize" onMouseDown={(e) => handleResizeStart(e, 'nw')} />
-          <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 cursor-ne-resize" onMouseDown={(e) => handleResizeStart(e, 'ne')} />
-          <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-blue-500 cursor-sw-resize" onMouseDown={(e) => handleResizeStart(e, 'sw')} />
-          <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-blue-500 cursor-se-resize" onMouseDown={(e) => handleResizeStart(e, 'se')} />
-          {/* Edge handles */}
-          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-1.5 bg-blue-500 cursor-n-resize" onMouseDown={(e) => handleResizeStart(e, 'n')} />
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-1.5 bg-blue-500 cursor-s-resize" onMouseDown={(e) => handleResizeStart(e, 's')} />
-          <div className="absolute top-1/2 -left-1 -translate-y-1/2 w-1.5 h-4 bg-blue-500 cursor-w-resize" onMouseDown={(e) => handleResizeStart(e, 'w')} />
-          <div className="absolute top-1/2 -right-1 -translate-y-1/2 w-1.5 h-4 bg-blue-500 cursor-e-resize" onMouseDown={(e) => handleResizeStart(e, 'e')} />
-        </>
-      )}
-    </div>
-  );
-});
-
-// Image Block Component
-const ImageBlockView = React.memo(({
-  block,
-  scale,
-  isSelected,
-  onSelect
-}: {
-  block: ImageBlockType;
-  scale: number;
-  isSelected: boolean;
-  onSelect: () => void;
-}) => {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState(false);
-
-  const [x, y, w, h] = block.box;
-
-  // Convert blob to URL
-  useEffect(() => {
-    if (block.blob && block.blob.size > 0) {
-      const url = URL.createObjectURL(block.blob);
-      setImageUrl(url);
-      setLoadError(false);
-      return () => URL.revokeObjectURL(url);
-    } else {
-      setLoadError(true);
-    }
-  }, [block.blob]);
-
-  return (
-    <div
-      className={`
-        absolute transition-all duration-150 overflow-hidden
-        ${isSelected ? 'ring-2 ring-blue-500 z-20' : 'hover:ring-2 hover:ring-blue-300 z-10'}
-      `}
-      style={{
-        left: `${x}%`,
-        top: `${y}%`,
-        width: `${w}%`,
-        height: `${h}%`,
-        borderRadius: '4px',
-        backgroundColor: '#f3f4f6',
-      }}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect();
-      }}
-    >
-      {imageUrl && !loadError ? (
-        <img
-          src={imageUrl}
-          alt="PDF Image"
-          className="w-full h-full object-contain"
-          style={{
-            transform: `rotate(${block.rotation || 0}deg)`,
-          }}
-          onError={() => setLoadError(true)}
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-100">
-          <icons.Image size={24} className="mb-1" />
-          <span className="text-xs">Image</span>
-        </div>
-      )}
-
-      {/* Selection handles */}
-      {isSelected && (
-        <>
-          <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-nw-resize" />
-          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-ne-resize" />
-          <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-sw-resize" />
-          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-se-resize" />
-        </>
-      )}
-    </div>
-  );
-});
 
 export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
   page,
@@ -511,11 +62,27 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
   onDrawingChange,
   onLayerObjectsChange,
   onHistoryChange,
+  onSelectionChange,
+  onToolChange,
+  onTextEditingChange,
+  onAddTextBlock,
   activeLayerId,
   layers = [],
   onLayerCanvasReady,
   onZoomChange,
+
+  deselectSignal,
+  signatureToInsert,
+  onSignatureInserted,
+  linkToApply,
+  onLinkApplied,
 }) => {
+  // Handle deselect signal
+  useEffect(() => {
+    if (deselectSignal) {
+      setSelectedBlockId(null);
+    }
+  }, [deselectSignal]);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [blockWithTextSelection, setBlockWithTextSelection] = useState<string | null>(null);
   const [activeGuides, setActiveGuides] = useState<{ type: 'h' | 'v'; position: number }[]>([]);
@@ -554,7 +121,6 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
     : undefined;
 
   // A4 dimensions at 72 DPI = 595 x 842 points
-  // A4 dimensions at 72 DPI = 595 x 842 points
   const pageWidth = page.dims.width * effectiveScale;
   const pageHeight = page.dims.height * effectiveScale;
 
@@ -572,23 +138,6 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
     <SnapGuideContext.Provider value={{ activeGuides, setActiveGuides, allBlocks }}>
       <div className="relative w-full flex justify-center">
         <div className="relative" style={{ width: pageWidth, height: pageHeight }}>
-          {/* Floating Toolbar - positioned above selected block */}
-          {selectedBlock && (
-            <div
-              className="absolute z-50"
-              style={{
-                top: `${(selectedBlock.box[1] / 100) * pageHeight - 50}px`,
-                left: `${((selectedBlock.box[0] + selectedBlock.box[2] / 2) / 100) * pageWidth}px`,
-                transform: 'translateX(-50%)',
-              }}
-            >
-              <FloatingToolbar
-                styles={selectedBlock.styles}
-                onUpdate={(styles) => onUpdateBlockStyles?.(selectedBlock.id, styles)}
-                position={{ top: 0, left: 0, width: 0 }} // Position handled by parent
-              />
-            </div>
-          )}
 
           {/* Page Canvas - transparent background */}
           <div
@@ -599,55 +148,93 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
               width: pageWidth,
               height: pageHeight,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              cursor: drawingTool === 'text' ? 'text' : undefined,
             }}
-            onClick={() => setSelectedBlockId(null)}
+            onClick={(e) => {
+              // Handle text tool - create new text block at click position
+              if (drawingTool === 'text' && onAddTextBlock && pageRef.current) {
+                const rect = pageRef.current.getBoundingClientRect();
+                // Calculate position as percentage of page dimensions
+                const xPercent = ((e.clientX - rect.left) / pageWidth) * 100;
+                const yPercent = ((e.clientY - rect.top) / pageHeight) * 100;
+                const wPercent = 20;
+                const hPercent = 5;
+
+                // Generate ID here to trigger immediate selection/editing
+                const newId = `text-${Date.now()}`;
+
+                onAddTextBlock([xPercent, yPercent, wPercent, hPercent], newId);
+
+                // Auto-select and Enter Edit Mode
+                setSelectedBlockId(newId);
+                onTextEditingChange?.(true, newId);
+
+                // Switch to select tool so we can interact/edit naturally
+                onToolChange?.('select');
+              } else {
+                setSelectedBlockId(null);
+              }
+            }}
           >
             {/* Clean White Background */}
             <div className="absolute inset-0 bg-white" />
 
-            {/* Snap Guide Lines - invisible, just for haptic feedback */}
-            {/* Guides are now invisible - snapping still works but no visual lines */}
+            {/* Page Content - Text Blocks (only interactive when PDF Content layer is active AND NOT using text tool) */}
+            {/* Apply z-index based on pdf-content layer order for proper stacking */}
+            {(() => {
+              const pdfContentLayer = layers.find(l => l.id === 'pdf-content');
+              const pdfZIndex = pdfContentLayer ? 10 + pdfContentLayer.order : 5;
+              return (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: pdfZIndex,
+                    pointerEvents: (activeLayerId === 'pdf-content' && drawingTool !== 'text') ? 'auto' : 'none'
+                  }}
+                >
+                  {page.blocks.map((block) => {
+                    if (block.type === 'text') {
+                      return (
+                        <TextBlock
+                          key={block.id}
+                          block={block}
+                          scale={effectiveScale}
+                          pageWidth={pageWidth}
+                          pageHeight={pageHeight}
+                          isSelected={selectedBlockId === block.id}
+                          onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
+                          onUpdateContent={(html) => onUpdateBlock?.(block.id, html)}
+                          onResize={(newBox) => onMoveBlock?.(block.id, newBox)}
+                          onTextSelectionChange={(hasSelection) => {
+                            setBlockWithTextSelection(hasSelection ? block.id : null);
+                          }}
+                          onUpdateStyles={(styles) => onUpdateBlockStyles?.(block.id, styles)}
+                          onTextEditingChange={onTextEditingChange}
+                        />
+                      );
+                    }
 
-            {/* Page Content - Text Blocks */}
-            <div>
-              {page.blocks.map((block) => {
-                if (block.type === 'text') {
-                  return (
-                    <TextBlock
-                      key={block.id}
-                      block={block}
-                      scale={effectiveScale}
-                      pageWidth={pageWidth}
-                      pageHeight={pageHeight}
-                      isSelected={selectedBlockId === block.id}
-                      onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
-                      onUpdateContent={(html) => onUpdateBlock?.(block.id, html)}
-                      onResize={(newBox) => onMoveBlock?.(block.id, newBox)}
-                      onTextSelectionChange={(hasSelection) => {
-                        setBlockWithTextSelection(hasSelection ? block.id : null);
-                      }}
-                    />
-                  );
-                }
+                    if (block.type === 'image') {
+                      return (
+                        <ImageBlock
+                          key={block.id}
+                          block={block as ImageBlockType}
+                          scale={effectiveScale}
+                          pageWidth={pageWidth}
+                          pageHeight={pageHeight}
+                          isSelected={selectedBlockId === block.id}
+                          onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
+                          onResize={(newBox) => onMoveBlock?.(block.id, newBox)}
+                        />
+                      );
+                    }
 
-                if (block.type === 'image') {
-                  return (
-                    <ImageBlockView
-                      key={block.id}
-                      block={block as ImageBlockType}
-                      scale={effectiveScale}
-                      isSelected={selectedBlockId === block.id}
-                      onSelect={() => !isDrawingMode && setSelectedBlockId(block.id)}
-                    />
-                  );
-                }
-
-                return null;
-              })}
-            </div>
-
-            {/* Drawing Canvas Overlay - Always mounted and active */}
-            {/* REMOVED: Old single canvas approach */}
+                    return null;
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Multi-Layer Canvas System - Each layer is a separate canvas */}
             {/* Skip 'pdf-content' layer as it represents the text editing layer below */}
@@ -677,6 +264,14 @@ export const HydratedPageView: React.FC<HydratedPageViewProps> = React.memo(({
                 opacity={opacity}
                 onObjectsChange={onLayerObjectsChange}
                 onHistoryChange={onHistoryChange}
+                onSelectionChange={onSelectionChange}
+                onToolChange={onToolChange}
+                onTextEditingChange={onTextEditingChange}
+                deselectSignal={deselectSignal}
+                signatureToInsert={activeLayerId === layer.id ? signatureToInsert : null}
+                onSignatureInserted={onSignatureInserted}
+                linkToApply={activeLayerId === layer.id ? linkToApply : null}
+                onLinkApplied={onLinkApplied}
               />
             ))}
 

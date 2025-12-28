@@ -78,12 +78,12 @@ export const LeftSidebar = ({ isOpen, onToggle, totalPages = 1, currentPage = 1,
 
   if (!isOpen) {
     return (
-      <div className="w-12 border-r bg-card flex flex-col items-center py-2">
+      <div className="w-12 h-full border-r bg-card flex flex-col items-center py-4">
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggle}
-          className="mb-2"
+          className="mb-2 hover:bg-muted"
         >
           <Grid className="h-4 w-4" />
         </Button>
@@ -93,7 +93,7 @@ export const LeftSidebar = ({ isOpen, onToggle, totalPages = 1, currentPage = 1,
 
   return (
     <aside className="w-52 border-r bg-card flex flex-col shrink-0 h-full shadow-soft z-20">
-      <div className="h-12 border-b flex items-center justify-between px-3 shrink-0 bg-white/50 backdrop-blur-sm">
+      <div className="h-14 border-b flex items-center justify-between px-3 shrink-0 bg-white/50 backdrop-blur-sm">
         <h3 className="font-semibold text-sm text-foreground/80">Navigation</h3>
         <Button
           variant="ghost"

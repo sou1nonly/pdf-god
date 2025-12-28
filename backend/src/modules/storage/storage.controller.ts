@@ -1,14 +1,17 @@
-/**
- * Storage Module - Controller
- * HTTP request handlers for file storage
- */
-
 import { Request, Response, NextFunction } from 'express';
 import * as storageService from './storage.service';
 import * as documentsService from '../documents/documents.service';
 import { sendSuccess, sendError } from '../../shared/response';
 import { getFileInfo } from '../../middleware/upload.middleware';
 import type { UploadFileInput, GetSignedUrlInput } from './storage.types';
+// @ts-ignore - file-type is a CommonJS module
+import fileType from 'file-type';
+
+// Allowed MIME types (must match middleware for defense in depth)
+const ALLOWED_CONTENT_TYPES = [
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff',
+];
 
 /**
  * POST /api/storage/upload
@@ -33,13 +36,31 @@ export const uploadFile = async (
         const file = getFileInfo(req.file);
         const { folder } = req.body as UploadFileInput;
 
+        // Validate actual file content (defense against spoofed MIME types)
+        const detectedType = await fileType.fromBuffer(file.buffer);
+
+        if (detectedType) {
+            // For files with detectable types, verify it matches allowed types
+            if (!ALLOWED_CONTENT_TYPES.includes(detectedType.mime)) {
+                sendError(res, 'INVALID_FILE_TYPE',
+                    `Detected file type ${detectedType.mime} is not allowed. File content does not match expected type.`,
+                    400
+                );
+                return;
+            }
+        } else {
+            // For text files (txt, rtf) that don't have magic bytes, 
+            // we rely on the middleware validation
+            console.log('No magic bytes detected, relying on middleware validation');
+        }
+
         // Upload to storage
         const uploaded = await storageService.uploadFile(
             req.user.id,
             {
                 buffer: file.buffer,
                 originalName: file.originalName,
-                mimeType: file.mimeType,
+                mimeType: detectedType?.mime || file.mimeType, // Use detected type if available
                 size: file.size,
             },
             folder || 'documents'
@@ -49,7 +70,7 @@ export const uploadFile = async (
         const document = await documentsService.createDocument(req.user.id, {
             fileName: file.originalName,
             fileSize: file.size,
-            fileType: file.mimeType,
+            fileType: detectedType?.mime || file.mimeType,
             storagePath: uploaded.path,
         });
 

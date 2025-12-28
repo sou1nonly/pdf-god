@@ -1,5 +1,5 @@
 /**
- * UniPDF Studio - Backend API Server
+ * Lamina - Backend API Server
  * Main Express Application Entry Point
  */
 
@@ -173,8 +173,8 @@ const startServer = async (): Promise<void> => {
 
     app.listen(env.port, () => {
         console.log('');
-        console.log('🚀 UniPDF Studio Backend API');
-        console.log('============================');
+        console.log('🚀 Lamina Backend API');
+        console.log('====================');
         console.log(`📍 Server:      http://localhost:${env.port}`);
         console.log(`🔧 Environment: ${env.nodeEnv}`);
         console.log(`❤️  Health:      http://localhost:${env.port}/health`);

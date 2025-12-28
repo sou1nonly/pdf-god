@@ -4,7 +4,7 @@ import HydrationWorker from '@/workers/hydration.worker?worker';
 
 type Status = 'idle' | 'processing' | 'complete' | 'error';
 
-export type ProcessingStage = 
+export type ProcessingStage =
   | 'idle'
   | 'opening'
   | 'scanning'
@@ -25,7 +25,7 @@ export interface StageInfo {
   totalPages?: number;
 }
 
-export type HydratedPageWithUrl = HydratedPage & { 
+export type HydratedPageWithUrl = HydratedPage & {
   backgroundUrl?: string;
   blocks: (HydratedPage['blocks'][0] & { imageUrl?: string })[];
 };
@@ -56,7 +56,7 @@ export const useHydrationEngine = () => {
 
       worker.onmessage = (event: MessageEvent) => {
         const { type, pages: resultPages, error: workerError, progress: workerProgress, stage, message, pageNum, totalPages } = event.data;
-        
+
         if (type === 'COMPLETE') {
           // Create Object URLs for background blobs and image blocks
           const pagesWithUrls = (resultPages as HydratedPage[]).map(page => ({
@@ -72,7 +72,7 @@ export const useHydrationEngine = () => {
               return block;
             })
           }));
-          
+
           setPages(pagesWithUrls);
           setStatus('complete');
           setProgress(100);
@@ -98,7 +98,7 @@ export const useHydrationEngine = () => {
       const buffer = await file.arrayBuffer();
       // Transfer buffer to worker
       worker.postMessage({ fileBuffer: buffer }, [buffer]);
-      
+
     } catch (err) {
       console.error('Failed to start hydration:', err);
       setError(err instanceof Error ? err.message : 'Failed to start processing');
@@ -144,10 +144,10 @@ export const useHydrationEngine = () => {
   const updateBlock = useCallback((pageIndex: number, blockId: string, newHtml: string) => {
     setPages(currentPages => {
       if (!currentPages) return null;
-      
+
       return currentPages.map((page, idx) => {
         if (idx !== pageIndex) return page;
-        
+
         return {
           ...page,
           blocks: page.blocks.map(block => {
@@ -164,10 +164,10 @@ export const useHydrationEngine = () => {
   const moveBlock = useCallback((pageIndex: number, blockId: string, newBox: [number, number, number, number]) => {
     setPages(currentPages => {
       if (!currentPages) return null;
-      
+
       return currentPages.map((page, idx) => {
         if (idx !== pageIndex) return page;
-        
+
         return {
           ...page,
           blocks: page.blocks.map(block => {
@@ -184,17 +184,17 @@ export const useHydrationEngine = () => {
   const updateBlockStyles = useCallback((pageIndex: number, blockId: string, newStyles: Partial<any>) => {
     setPages(currentPages => {
       if (!currentPages) return null;
-      
+
       return currentPages.map((page, idx) => {
         if (idx !== pageIndex) return page;
-        
+
         return {
           ...page,
           blocks: page.blocks.map(block => {
             if (block.id === blockId && block.type === 'text') {
-              return { 
-                ...block, 
-                styles: { ...block.styles, ...newStyles } 
+              return {
+                ...block,
+                styles: { ...block.styles, ...newStyles }
               };
             }
             return block;
@@ -204,5 +204,53 @@ export const useHydrationEngine = () => {
     });
   }, []);
 
-  return { processFile, pages, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles };
+  // Add a new text block at specified position (for text tool)
+  const addTextBlock = useCallback((pageIndex: number, box: [number, number, number, number], customId?: string) => {
+    setPages(currentPages => {
+      if (!currentPages) return null;
+
+      return currentPages.map((page, idx) => {
+        if (idx !== pageIndex) return page;
+
+        // Generate unique ID for new block
+        const newBlockId = customId || `text-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const newBlock = {
+          id: newBlockId,
+          type: 'text' as const,
+          box: box,
+          html: '<span>Type here...</span>',
+          text: 'Type here...',
+          styles: {
+            fontSize: 14,
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 400,
+            color: '#000000',
+            align: 'left' as const,
+            letterSpacing: 0,
+            italic: false,
+            underline: false,
+            lineHeight: 1.4,
+          },
+          confidence: 1.0,
+          meta: {
+            isHeader: false,
+            isListItem: false,
+            isCaption: false,
+            rotation: 0,
+            lineHeightRatio: 1,
+            columnIndex: 0,
+            sourceRuns: 1,
+          },
+        };
+
+        return {
+          ...page,
+          blocks: [...page.blocks, newBlock],
+        };
+      });
+    });
+  }, []);
+
+  return { processFile, pages, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles, addTextBlock };
 };

@@ -4,7 +4,7 @@
  */
 
 import { api, storeTokens, clearTokens, getRefreshToken } from '../client';
-import type { User } from '@unipdf/shared';
+import type { User } from '@lamina/shared';
 
 export interface AuthResponse {
     user: User;

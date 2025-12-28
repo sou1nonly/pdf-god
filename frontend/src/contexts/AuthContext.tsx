@@ -51,35 +51,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signInAnonymously = async () => {
-    // Local guest mode - no Supabase interaction
-    const guestUser: User = {
-      id: 'guest',
-      aud: 'authenticated',
-      role: 'authenticated',
-      email: 'guest@local',
-      email_confirmed_at: new Date().toISOString(),
-      phone: '',
-      confirmed_at: new Date().toISOString(),
-      last_sign_in_at: new Date().toISOString(),
-      app_metadata: { provider: 'email' },
-      user_metadata: { full_name: 'Guest User' },
-      identities: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      is_anonymous: true
-    };
+    // Use real Supabase anonymous authentication
+    const { data, error } = await supabase.auth.signInAnonymously();
 
-    setUser(guestUser);
-    // Create a dummy session
-    const guestSession: Session = {
-      access_token: 'guest-token',
-      refresh_token: 'guest-refresh-token',
-      expires_in: 3600,
-      token_type: 'bearer',
-      user: guestUser
-    };
-    setSession(guestSession);
-    setLoading(false);
+    if (error) {
+      console.error('Error signing in anonymously:', error);
+      throw error;
+    }
+
+    // Session will be automatically set by onAuthStateChange listener
+    // The user will have is_anonymous = true
   };
 
   const signInWithGoogle = async () => {

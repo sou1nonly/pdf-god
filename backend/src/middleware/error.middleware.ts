@@ -6,7 +6,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { env } from '../config/env';
-import type { ApiResponse } from '@unipdf/shared';
+import type { ApiResponse } from '@lamina/shared';
 
 /**
  * Custom API Error class

@@ -2,22 +2,38 @@ import { ChevronRight, Bot, FileText, Wand2, Loader2, Send, Copy, Check, Sparkle
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useAIChat, useAISummarize, useAIRewrite, useAIQuestions } from "@/hooks/api";
 import { useAuth } from "@/contexts/AuthContext";
-import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@unipdf/shared";
+import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@lamina/shared";
+
+// Approximate tokens by characters (1 token ≈ 4 chars for English)
+const MAX_TOKENS_FOR_QUESTIONS = 2000; // ~8000 chars
+const MAX_TOKENS_FOR_CHAT = 4000; // ~16000 chars
+
+/**
+ * Truncate text to approximate token limit
+ * 1 token ≈ 4 characters for English text
+ */
+function truncateToTokens(text: string, maxTokens: number): string {
+  const maxChars = maxTokens * 4;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + '... [truncated]';
+}
 
 interface RightSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   documentText?: string;
+  currentPageText?: string; // Text from current page only
 }
 
 export const RightSidebar = ({
   isOpen,
   onToggle,
   documentText = '',
+  currentPageText = '',
 }: RightSidebarProps) => {
   // Tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'summary' | 'rewrite'>('chat');
@@ -67,14 +83,19 @@ export const RightSidebar = ({
     return () => document.removeEventListener('mouseup', handleSelection);
   }, []);
 
-  // Generate suggested questions when document loads
+  // Generate suggested questions when document loads (limited to ~2000 tokens)
   useEffect(() => {
     if (documentText && documentText.length > 100 && !questionsGenerated && suggestedQuestions.length === 0) {
+      const truncatedText = truncateToTokens(documentText, MAX_TOKENS_FOR_QUESTIONS);
       generateQuestions(
-        { documentText, count: 3 },
+        { documentText: truncatedText, count: 3 },
         {
           onSuccess: (data) => {
             setSuggestedQuestions(data.questions.slice(0, 3));
+            setQuestionsGenerated(true);
+          },
+          onError: () => {
+            // Silently fail - questions are optional
             setQuestionsGenerated(true);
           }
         }
@@ -86,7 +107,10 @@ export const RightSidebar = ({
   const handleSendMessage = () => {
     if (!chatInput.trim() || chatLoading) return;
 
-    if (!documentText) {
+    // Use current page text if available, otherwise fallback to truncated full doc
+    const contextText = currentPageText || truncateToTokens(documentText, MAX_TOKENS_FOR_CHAT);
+
+    if (!contextText) {
       toast.error('No document loaded');
       return;
     }
@@ -98,7 +122,7 @@ export const RightSidebar = ({
     setMessages(newMessages);
 
     chat(
-      { message: userMessage, documentText, history: messages },
+      { message: userMessage, documentText: contextText, history: messages },
       {
         onSuccess: (data) => {
           setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
@@ -219,7 +243,7 @@ export const RightSidebar = ({
   return (
     <aside className="w-80 border-l bg-card flex flex-col shrink-0 h-full shadow-soft z-20">
       {/* Header */}
-      <div className="h-16 border-b flex items-center justify-between px-4 bg-white/50 backdrop-blur-sm">
+      <div className="h-14 border-b flex items-center justify-between px-4 bg-white/50 backdrop-blur-sm">
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
             <Sparkles className="h-4 w-4" />
@@ -471,13 +495,6 @@ export const RightSidebar = ({
             </div>
           </div>
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="p-2 border-t text-center">
-        <p className="text-xs text-muted-foreground">
-          Powered by Gemini 2.0 Flash
-        </p>
       </div>
     </aside>
   );

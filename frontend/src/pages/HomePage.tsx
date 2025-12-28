@@ -69,11 +69,9 @@ const HomePage = () => {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-sidebar-background">
-      <div className="p-6 flex items-center gap-3">
-        <div className="logo-icon">
-          <FileText className="h-5 w-5" />
-        </div>
-        <span className="logo-text">UniPDF</span>
+      <div className="p-6">
+        {/* Logo - Full logo, no text */}
+        <img src="/logo-full.png" alt="Lamina" className="h-[50px] w-auto object-contain" />
       </div>
 
       <div className="flex-1 overflow-y-auto py-2 px-4 space-y-1">
@@ -119,22 +117,24 @@ const HomePage = () => {
   const QuickActionCard = ({ icon: Icon, label, description, onClick, colorClass }: any) => (
     <button
       onClick={onClick}
-      className={`flex flex-col items-start justify-between p-6 rounded-3xl ${colorClass.bg} shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-1 group text-left h-36 w-full relative overflow-hidden border-none`}
+      className="relative overflow-hidden group p-6 rounded-2xl h-40 w-full text-left transition-all duration-300 hover:-translate-y-1 bg-white border border-border hover:border-primary/40 shadow-sm hover:shadow-md"
     >
-      <Icon className={`h-8 w-8 ${colorClass.icon} mb-auto`} />
-
-      <div className="z-10 mt-4">
-        <h3 className="font-bold text-foreground text-lg tracking-tight">{label}</h3>
-        <p className="text-sm text-foreground/60 font-medium">{description}</p>
+      <div className={`h-12 w-12 rounded-xl ${colorClass.bg} flex items-center justify-center mb-4 transition-transform group-hover:scale-110`}>
+        <Icon className={`h-6 w-6 ${colorClass.icon}`} />
       </div>
 
-      {/* Decorative large icon in background */}
-      <Icon className={`absolute -right-4 -bottom-4 h-24 w-24 opacity-10 ${colorClass.icon} rotate-12`} />
+      <div className="z-10 relative">
+        <h3 className="font-bold text-foreground text-lg tracking-tight mb-1">{label}</h3>
+        <p className="text-sm text-muted-foreground font-medium">{description}</p>
+      </div>
+
+      {/* Subtle decorative watermark */}
+      <Icon className="absolute -right-4 -bottom-4 h-24 w-24 opacity-[0.05] rotate-12 transition-transform group-hover:rotate-6" />
     </button>
   );
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-background overflow-hidden">
       {/* Sidebar - Desktop */}
       <aside className="w-64 border-r bg-card hidden md:flex flex-col shrink-0 z-20 shadow-soft">
         <SidebarContent />
@@ -155,18 +155,17 @@ const HomePage = () => {
                 <SidebarContent />
               </SheetContent>
             </Sheet>
-            <div className="logo-icon h-8 w-8">
-              <FileText className="h-4 w-4" />
-            </div>
+            {/* Mobile Logo Icon */}
+            <img src="/logo-icon.png" alt="Lamina Logo" className="h-8 w-8 rounded-lg object-contain" />
           </div>
 
 
 
           <div className="flex items-center gap-3 ml-auto">
-            <Button variant="ghost" size="icon" className="hidden sm:flex text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon" className="hidden sm:flex text-muted-foreground hover:text-foreground border border-border rounded-lg">
               <Bell className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="hidden sm:flex text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon" className="hidden sm:flex text-muted-foreground hover:text-foreground border border-border rounded-lg">
               <HelpCircle className="h-5 w-5" />
             </Button>
 
@@ -205,7 +204,7 @@ const HomePage = () => {
                   <Folder className="h-4 w-4 mr-2" />
                   My Projects
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => toast.info("Coming Soon", { description: "Settings will be available in a future update." })}>
                   <Settings className="h-4 w-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
@@ -224,21 +223,18 @@ const HomePage = () => {
           <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-10 pb-20">
 
             {/* Hero Section */}
-            <section className="text-center space-y-4 py-8 md:py-12 fade-in">
-              <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-foreground">
-                What will you <span className="text-primary relative inline-block">
-                  design
-                  <svg className="absolute -bottom-2 left-0 w-full h-3 text-secondary opacity-50" viewBox="0 0 100 10" preserveAspectRatio="none">
-                    <path d="M0 5 Q 50 10 100 5" stroke="currentColor" strokeWidth="3" fill="none" />
-                  </svg>
-                </span> today?
+            <section className="text-center space-y-12 py-8 md:py-12 fade-in max-w-4xl mx-auto">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider animate-fade-in-up">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>The new standard for docs</span>
+              </div>
+              <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-foreground">
+                <span className="block">What will you <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-purple-500 to-pink-500">design</span></span>
+                <span className="block mt-2 md:mt-4">today?</span>
               </h1>
-              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                Create, edit, and collaborate on your PDF documents with the power of AI.
-              </p>
 
               {/* Quick Actions Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-12">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-14">
                 {/* Upload PDF Card - just opens dialog */}
                 {/* Upload PDF Card - just opens dialog */}
                 <QuickActionCard
@@ -276,13 +272,13 @@ const HomePage = () => {
             </section>
 
             {/* Integrated Documents Section */}
-            <section id="documents-section" className="space-y-6 pt-8 border-t border-border/50">
+            <section id="documents-section" className="space-y-6 pt-8">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold tracking-tight">Your Projects</h2>
                 {/* DocumentsList handles its own toggle controls */}
               </div>
 
-              <div className="bg-card/50 rounded-3xl p-1 md:p-6 min-h-[400px]">
+              <div className="bg-card/50 rounded-3xl p-1 md:p-6 min-h-[400px] border border-border/50">
                 <DocumentsList embedded onUploadClick={() => setIsUploadOpen(true)} />
               </div>
             </section>

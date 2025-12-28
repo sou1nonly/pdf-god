@@ -1,6 +1,8 @@
-# UniPDF Studio
+# Lamina
 
 A modern, AI-powered PDF editor and document management system built with a separated **backend/frontend architecture** using **MVC micromodular design**.
+
+![Lamina](frontend/public/logo-full.png)
 
 ## 🚀 Quick Start
 
@@ -18,7 +20,7 @@ npm run dev
 ## 📁 Project Structure
 
 ```
-pdf-god/
+lamina/
 ├── backend/                        # Node.js Express API
 │   ├── src/
 │   │   ├── app.ts                  # Express app entry
@@ -29,15 +31,22 @@ pdf-god/
 │   │       ├── documents/          # Document CRUD
 │   │       ├── annotations/        # PDF annotations
 │   │       ├── storage/            # File storage
-│   │       ├── ai/                 # AI features (Gemini)
+│   │       ├── ai/                 # AI features (Gemini 2.0 Flash)
 │   │       └── convert/            # File conversion
 │   └── .env.example
 │
 ├── frontend/                       # React + Vite App
 │   ├── src/
 │   │   ├── api/                    # API client layer
-│   │   ├── components/             # UI components
-│   │   ├── hooks/                  # React hooks (including API hooks)
+│   │   ├── components/
+│   │   │   ├── document/           # Document list & thumbnails
+│   │   │   ├── editor/             # PDF editor components
+│   │   │   │   ├── canvas/         # Fabric.js canvas & layers
+│   │   │   │   └── ...             # Annotations, toolbar, etc.
+│   │   │   ├── layout/             # TopBar, Sidebars, Toolbar
+│   │   │   ├── ui/                 # shadcn/ui components
+│   │   │   └── upload/             # File upload zone
+│   │   ├── hooks/                  # React hooks (including hydration engine)
 │   │   ├── pages/                  # Page components
 │   │   └── lib/                    # Utilities
 │   └── .env.example
@@ -53,21 +62,34 @@ pdf-god/
 
 ## ✨ Features
 
-### Core Features
-- 🔐 **Authentication**: Google OAuth + Anonymous sign-in
-- 📤 **File Upload**: Drag & drop with progress tracking
-- 📄 **PDF Rendering**: PDF.js viewer with zoom and navigation
-- ✏️ **Annotations**: Drawing, shapes, text on PDF pages
-- 🗂️ **Document Management**: List, search, organize documents
-- 🔄 **Format Conversion**: Images and text to PDF
-- 💾 **Cloud Storage**: Supabase storage with RLS
+### Core PDF Editor
+- 📄 **PDF Rendering**: High-fidelity PDF.js viewer with zoom and navigation
+- 🎨 **Multi-Layer Canvas**: Fabric.js-powered drawing canvas with layer management
+- ✏️ **Drawing Tools**: Pen, highlighter, shapes (rectangle, circle, line, arrow)
+- 📝 **Text & Notes**: Add text blocks, sticky notes, and callouts
+- 🖼️ **Image Support**: Insert and manipulate images on PDF pages
+- ↩️ **Undo/Redo**: Full history support with keyboard shortcuts
+- 💾 **Export**: Save annotations and export modified PDFs
 
-### AI Features (Gemini-powered)
+### Document Management
+- 🔐 **Authentication**: Google OAuth + Guest mode
+- 📤 **File Upload**: Drag & drop with progress tracking
+- 🗂️ **Document List**: Grid/List view with search and filtering
+- ✏️ **Rename/Delete**: Manage your documents with ease
+- 💾 **Cloud Storage**: Supabase storage with Row Level Security
+
+### AI Copilot (Gemini 2.0 Flash)
 - 💬 **Chat**: Ask questions about your documents
 - 📝 **Summarize**: Generate brief or detailed summaries
 - ✍️ **Rewrite**: Transform text in different tones
 - ❓ **Questions**: Auto-generate relevant questions
-- 🔍 **Extract**: Pull key topics, points, and entities
+- 🔍 **Context-Aware**: AI understands your PDF content
+
+### UI/UX
+- 🎨 **Modern Design**: Clean, pastel-inspired aesthetic
+- 📱 **Responsive**: Works on desktop and mobile
+- 🌙 **Dark Mode Ready**: Theme support via next-themes
+- ⌨️ **Keyboard Shortcuts**: Ctrl+Z, Ctrl+Y, Delete, etc.
 
 ## 🛠️ Tech Stack
 
@@ -75,20 +97,22 @@ pdf-god/
 - **Runtime**: Node.js 18+
 - **Framework**: Express.js + TypeScript
 - **Database**: Supabase (PostgreSQL)
-- **AI**: Google Gemini API
+- **AI**: Google Gemini 2.0 Flash API
 - **Validation**: Zod
 - **Security**: Helmet, CORS, Rate limiting
 
 ### Frontend
-- **Framework**: React 18 + TypeScript + Vite
-- **Styling**: Tailwind CSS + shadcn/ui
-- **State**: TanStack Query (React Query)
+- **Framework**: React 18 + TypeScript + Vite 7
+- **Styling**: Tailwind CSS 3.4 + shadcn/ui
+- **State**: TanStack Query (React Query) + Zustand
 - **Routing**: React Router v6
 - **PDF**: PDF.js + pdf-lib
+- **Canvas**: Fabric.js 6.x
+- **Icons**: Lucide React
 
 ### Shared
 - **Types**: TypeScript interfaces shared between BE/FE
-- **Package**: @unipdf/shared (workspace)
+- **Package**: @lamina/shared (workspace)
 
 ## 🔧 Development Setup
 
@@ -147,48 +171,45 @@ npm run build
 ## 📡 API Endpoints
 
 ### Authentication (`/api/auth`)
-- `GET /me` - Get current user
-- `POST /google` - Google OAuth
-- `POST /anonymous` - Anonymous sign-in
-- `POST /refresh` - Refresh token
-- `POST /logout` - Sign out
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/me` | Get current user |
+| POST | `/google` | Google OAuth |
+| POST | `/anonymous` | Anonymous sign-in |
+| POST | `/logout` | Sign out |
 
 ### Documents (`/api/documents`)
-- `GET /` - List documents (paginated)
-- `GET /:id` - Get document
-- `POST /` - Create document
-- `PATCH /:id` - Update document
-- `DELETE /:id` - Delete document
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | List documents (paginated) |
+| GET | `/:id` | Get document |
+| POST | `/` | Create document |
+| PATCH | `/:id` | Update document |
+| DELETE | `/:id` | Delete document |
 
 ### Annotations (`/api/documents/:id/annotations`)
-- `GET /` - Get all annotations
-- `GET /:page` - Get page annotations
-- `POST /` - Save annotations
-- `DELETE /:page` - Delete page annotations
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Get all annotations |
+| POST | `/` | Save annotations |
 
 ### Storage (`/api/storage`)
-- `POST /upload` - Upload file
-- `GET /download/*` - Download file
-- `GET /signed-url/*` - Get signed URL
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/upload` | Upload file |
 
 ### AI (`/api/ai`)
-- `POST /chat` - Chat with document
-- `POST /summarize` - Summarize
-- `POST /rewrite` - Rewrite text
-- `POST /questions` - Generate questions
-- `POST /extract` - Extract key info
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/chat` | Chat with document |
+| POST | `/summarize` | Summarize document |
+| POST | `/rewrite` | Rewrite text |
+| POST | `/questions` | Generate questions |
 
 ### Convert (`/api/convert`)
-- `POST /image` - Image to PDF
-- `POST /text` - Text to PDF
-- `POST /document` - DOC to PDF
-
-## 📚 Documentation
-
-- **[Setup Checklist](docs/setup/SETUP-CHECKLIST.md)** - Complete setup
-- **[Database Migration](docs/setup/DATABASE-MIGRATION.md)** - DB setup
-- **[Google Auth Setup](docs/setup/GOOGLE-AUTH-SETUP.md)** - OAuth config
-- **[Supabase Storage](docs/setup/SUPABASE-STORAGE-SETUP.md)** - Storage setup
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/image` | Image to PDF |
 
 ## 🏗️ Architecture
 
@@ -197,7 +218,7 @@ The application follows a clean **MVC micromodular architecture**:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      Frontend                            │
-│  React + Vite + TailwindCSS + shadcn/ui                 │
+│  React + Vite + TailwindCSS + shadcn/ui + Fabric.js     │
 │  API Client Layer → React Query Hooks                    │
 └─────────────────────┬───────────────────────────────────┘
                       │ HTTP/REST
@@ -221,12 +242,19 @@ Each backend module follows the MVC pattern:
 - `controller.ts` - HTTP handlers
 - `routes.ts` - Express routes
 
+## 📚 Documentation
+
+- **[Setup Checklist](docs/setup/SETUP-CHECKLIST.md)** - Complete setup
+- **[Database Migration](docs/setup/DATABASE-MIGRATION.md)** - DB setup
+- **[Google Auth Setup](docs/setup/GOOGLE-AUTH-SETUP.md)** - OAuth config
+- **[Supabase Storage](docs/setup/SUPABASE-STORAGE-SETUP.md)** - Storage setup
+
 ## 📄 License
 
 All rights reserved - 2025
 
 ---
 
-**Last Updated**: December 18, 2025  
-**Version**: 2.0.0 (MVC Architecture)  
+**Last Updated**: December 28, 2025  
+**Version**: 2.1.0 (Canvas Editor + AI Copilot)  
 **Status**: Active Development 🚀

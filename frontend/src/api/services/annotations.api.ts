@@ -4,7 +4,7 @@
  */
 
 import { api } from '../client';
-import type { Annotation } from '@unipdf/shared';
+import type { Annotation } from '@lamina/shared';
 
 export interface AnnotationsResponse {
     annotations: Record<number, Annotation>;

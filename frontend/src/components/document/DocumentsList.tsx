@@ -279,10 +279,10 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
               placeholder="Search documents..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-white border-none shadow-sm h-10 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="pl-9 bg-white border border-border shadow-sm h-10 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-primary/50"
             />
           </div>
-          <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm">
+          <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm border border-border">
             <Button
               size="sm"
               variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
@@ -306,7 +306,7 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
               variant="ghost"
               size="icon"
               onClick={fetchDocuments}
-              className="text-muted-foreground hover:text-primary"
+              className="text-muted-foreground hover:text-primary border border-border rounded-lg"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -347,17 +347,17 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
             {filteredDocuments.map((doc) => (
               <Card
                 key={doc.id}
-                className="p-4 hover:shadow-soft hover:shadow-primary/10 transition-all group border-0 bg-white/50 hover:bg-white"
+                className="p-4 transition-all group border-2 border-border/70 hover:border-primary/40 bg-white rounded-2xl shadow-sm hover:shadow-lg"
               >
                 {viewMode === 'grid' ? (
                   <div className="space-y-3">
-                    <div className="aspect-[3/4] bg-gray-50 rounded-xl flex items-center justify-center relative overflow-hidden group-hover:shadow-md transition-all border border-gray-100">
+                    <div className="aspect-[3/4] bg-gray-100 rounded-xl flex items-center justify-center relative overflow-hidden border border-border/50">
                       <DocumentThumbnail storagePath={doc.storage_path} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none" />
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-medium truncate flex-1 text-sm group-hover:text-primary transition-colors" title={doc.file_name}>
+                        <h3 className="font-semibold truncate flex-1 text-sm group-hover:text-primary transition-colors" title={doc.file_name}>
                           {doc.file_name}
                         </h3>
                         <DropdownMenu>
@@ -385,13 +385,13 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
                         <span>{formatFileSize(doc.file_size)}</span>
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
                       <Button
                         size="sm"
-                        className="w-full bg-white text-primary border border-primary/20 shadow-sm hover:shadow-md hover:bg-primary hover:text-white transition-all"
+                        className="w-full bg-primary/10 text-primary border-0 hover:bg-primary hover:text-white transition-all font-semibold"
                         onClick={() => navigate(`/editor?id=${doc.id}`)}
                       >
                         <ExternalLink className="h-3 w-3 mr-2" />

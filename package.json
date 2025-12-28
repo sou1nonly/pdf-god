@@ -1,8 +1,8 @@
 {
-  "name": "unipdf-studio",
-  "version": "1.0.0",
+  "name": "lamina",
+  "version": "2.1.0",
   "private": true,
-  "description": "UniPDF Studio - Professional PDF Editor with AI",
+  "description": "Lamina - Professional PDF Editor with AI",
   "workspaces": [
     "backend",
     "frontend",

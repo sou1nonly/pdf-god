@@ -5,7 +5,7 @@
 
 import { env } from '../../config/env';
 import { ApiError } from '../../middleware/error.middleware';
-import type { ChatMessage, AIKeyInfo, AISummaryLength, AIRewriteTone } from '@unipdf/shared';
+import type { ChatMessage, AIKeyInfo, AISummaryLength, AIRewriteTone } from '@lamina/shared';
 
 // Gemini API Configuration
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';

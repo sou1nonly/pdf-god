@@ -11,8 +11,11 @@ import { PDFViewer } from "@/components/document/PDFViewer";
 import { HydratedPageView } from "@/components/editor/HydratedPageView";
 import { ProcessingOverlay } from "@/components/editor/ProcessingOverlay";
 import { CanvaToolbar } from "@/components/editor/CanvaToolbar";
-import { ColorPanel } from "@/components/editor/CanvaToolbar";
-import { LayersPanel, Layer } from "@/components/editor/MultiLayerCanvas";
+import { ColorPanel } from "@/components/editor/ColorPanel";
+import { SignatureModal } from "@/components/editor/SignatureModal";
+import { TextToolbar } from "@/components/editor/TextToolbar";
+import { LayersPanel } from "@/components/editor/canvas/LayersPanel";
+import { Layer } from "@/components/editor/types";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
 import { extractTextFromPages } from "@/lib/ai/text-extraction";
@@ -21,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadFile } from "@/lib/storage";
-import type { DrawingTool } from "@/components/editor/DrawingCanvas";
+import type { DrawingTool } from "@/components/editor/types";
 
 const EditorPage = () => {
   const [searchParams] = useSearchParams();
@@ -64,6 +67,25 @@ const EditorPage = () => {
   // Undo/Redo state for canvas - managed per-canvas via window.__drawingCanvas
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+
+  // Selection state for showing color panel
+  const [hasCanvasSelection, setHasCanvasSelection] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [signatureToInsert, setSignatureToInsert] = useState<string | null>(null);
+  const [linkToApply, setLinkToApply] = useState<{ url: string } | null>(null);
+
+  // Text editing state - shown when editing text on canvas or PDF content
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [editingBlockInfo, setEditingBlockInfo] = useState<{ pageIndex: number; blockId: string } | null>(null);
+  const [editingTextStyles, setEditingTextStyles] = useState({
+    fontFamily: 'Inter, sans-serif',
+    fontSize: 16,
+    fontWeight: 400,
+    italic: false,
+    underline: false,
+    align: 'left' as 'left' | 'center' | 'right',
+    color: '#000000',
+  });
 
   // Layer state - each layer has its own canvas
   // Special layer: 'pdf-content' is the base PDF text layer (not a canvas)
@@ -199,6 +221,101 @@ const EditorPage = () => {
     });
 
     setActiveLayerId(layerId);
+
+    // If switching to PDF Content layer, switch to Select tool
+    if (layerId === 'pdf-content') {
+      setActiveTool('select');
+    }
+  }, [activeLayerId]);
+
+  // Handle tool change - auto-switch to annotation layer when drawing
+  const [deselectSignal, setDeselectSignal] = useState(0);
+
+  const handleToolChange = useCallback((tool: DrawingTool) => {
+    // Handling Signature Tool - Open Modal
+    if (tool === 'signature') {
+      setShowSignatureModal(true);
+      return;
+    }
+
+    // Handling Link Tool - Prompt for URL
+    if (tool === 'link') {
+      if (hasCanvasSelection) {
+        const url = prompt("Enter URL for link (e.g. https://example.com):");
+        if (url) {
+          let finalUrl = url;
+          if (!url.startsWith('http')) {
+            finalUrl = 'https://' + url;
+          }
+          setLinkToApply({ url: finalUrl });
+        }
+      } else {
+        toast.error("Please select a text or object to link first");
+      }
+      return;
+    }
+
+    // If clicking Select tool while already active, trigger global deselect
+    if (tool === 'select' && activeTool === 'select') {
+      setDeselectSignal(prev => prev + 1);
+      // Also clear text editing state immediately
+      setIsEditingText(false);
+      setEditingBlockInfo(null);
+      return;
+    }
+
+    setActiveTool(tool);
+
+    // Text tool works on PDF content layer - switch to it
+    if (tool === 'text') {
+      if (activeLayerId !== 'pdf-content') {
+        handleLayerSelect('pdf-content');
+        toast.info('Switched to PDF Content layer for text editing');
+      }
+      return;
+    }
+
+    // If selecting a drawing tool (not select/hand/text), auto-switch to annotation layer
+    const drawingTools = ['draw', 'eraser', 'line', 'arrow', 'rect', 'circle', 'highlight', 'note', 'squiggly', 'check', 'cross', 'image', 'callout', 'link', 'stamp-approved', 'stamp-draft', 'stamp-confidential'];
+
+    if (drawingTools.includes(tool) && activeLayerId === 'pdf-content') {
+      // Find first annotation layer
+      const annotationLayer = layers.find(l => l.id !== 'pdf-content' && !l.locked);
+      if (annotationLayer) {
+        handleLayerSelect(annotationLayer.id);
+        toast.info(`Switched to ${annotationLayer.name} layer`);
+      }
+    }
+  }, [activeLayerId, layers, handleLayerSelect, activeTool]);
+
+  const handleSignatureSave = (dataUrl: string) => {
+    setSignatureToInsert(dataUrl);
+    // Ensure we are on an annotation layer
+    if (activeLayerId === 'pdf-content') {
+      const annotationLayer = layers.find(l => l.id !== 'pdf-content' && !l.locked);
+      if (annotationLayer) handleLayerSelect(annotationLayer.id);
+    }
+    // Switch to select tool so we can manipulate the inserted image
+    setActiveTool('select');
+  };
+
+  const handleSignatureInserted = useCallback(() => {
+    setSignatureToInsert(null);
+  }, []);
+
+  const handleLinkApplied = useCallback(() => {
+    setLinkToApply(null);
+    toast.success("Link added to object");
+    setActiveTool('select');
+  }, []);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (!activeLayerId) return;
+    const ref = layerCanvasRefs.current.get(activeLayerId);
+    if (ref) {
+      ref.deleteSelected();
+      toast.success("Deleted");
+    }
   }, [activeLayerId]);
 
   const handleLayerObjectsChange = useCallback((layerId: string, pageIndex: number, objects: any[]) => {
@@ -213,7 +330,7 @@ const EditorPage = () => {
     setHasUnsavedChanges(true);
   }, []);
 
-  const { processFile, pages, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles } = useHydrationEngine();
+  const { processFile, pages, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles, addTextBlock } = useHydrationEngine();
 
   // Extract text from pages for AI (memoized) - must be after useHydrationEngine
   const documentText = useMemo(() => {
@@ -222,6 +339,17 @@ const EditorPage = () => {
     }
     return '';
   }, [pages]);
+
+  // Extract text from current page only for AI chat (more relevant context)
+  const currentPageText = useMemo(() => {
+    if (pages && pages.length > 0 && currentPage >= 1 && currentPage <= pages.length) {
+      const page = pages[currentPage - 1];
+      if (page && page.blocks) {
+        return page.blocks.map((b: any) => b.text || '').join(' ');
+      }
+    }
+    return '';
+  }, [pages, currentPage]);
 
   const totalPages = numPages || (pages ? pages.length : 1);
 
@@ -248,6 +376,36 @@ const EditorPage = () => {
     setCanUndo(canUndoNow);
     setCanRedo(canRedoNow);
   }, []);
+
+  // Handle selection changes from canvas (for showing color panel)
+  const handleSelectionChange = useCallback((hasSelection: boolean) => {
+    setHasCanvasSelection(hasSelection);
+  }, []);
+
+  // Handle text editing state changes (for showing text toolbar)
+  const handleTextEditingChange = useCallback((pageIndex: number, isEditing: boolean, blockId?: string, styles?: any) => {
+    if (isEditing && blockId) {
+      setIsEditingText(true);
+      setEditingBlockInfo({ pageIndex, blockId });
+      if (styles) {
+        setEditingTextStyles(styles);
+      }
+    } else {
+      // Only clear if the request comes from the currently edited block
+      if (editingBlockInfo && editingBlockInfo.blockId === blockId) {
+        setIsEditingText(false);
+        setEditingBlockInfo(null);
+      }
+    }
+  }, [editingBlockInfo]);
+
+  // Apply style changes from TextToolbar to the currently editing block
+  const applyTextStyle = useCallback((styleUpdate: Partial<typeof editingTextStyles>) => {
+    setEditingTextStyles(s => ({ ...s, ...styleUpdate }));
+    if (editingBlockInfo) {
+      updateBlockStyles(editingBlockInfo.pageIndex, editingBlockInfo.blockId, styleUpdate);
+    }
+  }, [editingBlockInfo, updateBlockStyles]);
 
   // Undo/Redo handlers that delegate to the active layer canvas
   const handleUndo = useCallback(() => {
@@ -649,8 +807,19 @@ const EditorPage = () => {
                 onUpdateBlockStyles={(blockId, styles) => updateBlockStyles(page.pageIndex, blockId, styles)}
                 onLayerObjectsChange={(layerId, objects) => handleLayerObjectsChange(layerId, page.pageIndex, objects)}
                 onHistoryChange={handleHistoryChange}
+                onSelectionChange={handleSelectionChange}
+                onToolChange={handleToolChange}
+                onTextEditingChange={(isEditing, blockId, styles) => handleTextEditingChange(page.pageIndex, isEditing, blockId, styles)}
+                onAddTextBlock={(box, id) => addTextBlock(page.pageIndex, box, id)}
                 onLayerCanvasReady={(layerId, ref) => handleLayerCanvasReady(page.pageIndex, layerId, ref)}
                 onZoomChange={setZoom}
+
+
+                deselectSignal={deselectSignal}
+                signatureToInsert={signatureToInsert}
+                onSignatureInserted={handleSignatureInserted}
+                linkToApply={linkToApply}
+                onLinkApplied={handleLinkApplied}
               />
             </div>
           ))}
@@ -690,6 +859,8 @@ const EditorPage = () => {
         isSaving={isSaving}
         onMobileLeftToggle={() => setMobileLeftOpen(true)}
         onMobileRightToggle={() => setMobileRightOpen(true)}
+        leftSidebarOpen={leftSidebarOpen}
+        rightSidebarOpen={rightSidebarOpen}
       />
 
       {/* Body: Sidebars + Content */}
@@ -698,7 +869,7 @@ const EditorPage = () => {
         {viewMode === 'preview' && (
           <div
             className={cn(
-              "hidden md:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out border-r overflow-hidden bg-background",
+              "hidden md:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out overflow-hidden",
               leftSidebarOpen ? "w-52" : "w-12"
             )}
           >
@@ -737,8 +908,8 @@ const EditorPage = () => {
               viewMode={viewMode}
               onViewModeChange={setViewMode}
               activeTool={activeTool}
-              onToolChange={setActiveTool}
-              onClearAll={handleClearAll}
+              onToolChange={handleToolChange}
+              onDelete={handleDeleteSelected}
             />
             <div
               ref={scrollContainerRef}
@@ -778,10 +949,16 @@ const EditorPage = () => {
           </main>
         </div>
 
+        <SignatureModal
+          isOpen={showSignatureModal}
+          onClose={() => setShowSignatureModal(false)}
+          onSave={handleSignatureSave}
+        />
+
         {/* Right Sidebar - Desktop */}
         <div
           className={cn(
-            "hidden lg:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out border-l overflow-hidden bg-background",
+            "hidden lg:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out overflow-hidden",
             rightSidebarOpen ? "w-80" : "w-14"
           )}
         >
@@ -789,6 +966,7 @@ const EditorPage = () => {
             isOpen={rightSidebarOpen}
             onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
             documentText={documentText}
+            currentPageText={currentPageText}
           />
         </div>
       </div>
@@ -799,17 +977,40 @@ const EditorPage = () => {
           <div className="pointer-events-auto">
             <CanvaToolbar
               activeTool={activeTool}
-              onToolChange={setActiveTool}
+              onToolChange={handleToolChange}
               canUndo={canUndo}
               canRedo={canRedo}
               onUndo={handleUndo}
               onRedo={handleRedo}
-              onClearAll={handleClearAll}
+              onDelete={handleDeleteSelected}
               onExport={handleDownload}
             />
           </div>
 
-          {(activeTool === 'rect' || activeTool === 'circle' || activeTool === 'draw' || activeTool === 'arrow' || activeTool === 'line') && (
+          {/* Show TextToolbar when editing text */}
+          {isEditingText && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4 pointer-events-auto">
+              <TextToolbar
+                fontFamily={editingTextStyles.fontFamily}
+                fontSize={editingTextStyles.fontSize}
+                fontWeight={editingTextStyles.fontWeight}
+                italic={editingTextStyles.italic}
+                underline={editingTextStyles.underline}
+                align={editingTextStyles.align}
+                color={editingTextStyles.color}
+                onFontFamilyChange={(v) => applyTextStyle({ fontFamily: v })}
+                onFontSizeChange={(v) => applyTextStyle({ fontSize: v })}
+                onFontWeightChange={(v) => applyTextStyle({ fontWeight: v })}
+                onItalicChange={(v) => applyTextStyle({ italic: v })}
+                onUnderlineChange={(v) => applyTextStyle({ underline: v })}
+                onAlignChange={(v) => applyTextStyle({ align: v })}
+                onColorChange={(v) => applyTextStyle({ color: v })}
+              />
+            </div>
+          )}
+
+          {/* Show ColorPanel for drawing tools OR when select tool has non-text objects selected */}
+          {!isEditingText && (activeTool === 'rect' || activeTool === 'circle' || activeTool === 'draw' || activeTool === 'arrow' || activeTool === 'line' || activeTool === 'highlight' || activeTool === 'signature' || activeTool === 'callout' || activeTool === 'link' || (activeTool === 'select' && hasCanvasSelection)) && (
             <div className="fixed bottom-8 left-1/2 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4 pointer-events-auto">
               <ColorPanel
                 strokeColor={strokeColor}
@@ -859,6 +1060,7 @@ const EditorPage = () => {
           isOpen={true}
           onToggle={() => setMobileRightOpen(false)}
           documentText={documentText}
+          currentPageText={currentPageText}
         />
       </MobileDrawer>
     </div>

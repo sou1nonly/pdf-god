@@ -5,7 +5,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { aiApi } from '@/api/services/ai.api';
-import type { ChatMessage, AISummaryLength, AIRewriteTone } from '@unipdf/shared';
+import type { ChatMessage, AISummaryLength, AIRewriteTone } from '@lamina/shared';
 import { toast } from 'sonner';
 
 /**

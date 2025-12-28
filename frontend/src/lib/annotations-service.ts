@@ -4,7 +4,7 @@
  */
 
 import { annotationsApi } from '@/api/services/annotations.api';
-import type { Annotation } from '@unipdf/shared';
+import type { Annotation } from '@lamina/shared';
 
 // Type definition for legacy compatibility
 export interface AnnotationRecord {

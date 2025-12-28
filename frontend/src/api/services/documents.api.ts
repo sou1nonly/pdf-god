@@ -4,7 +4,7 @@
  */
 
 import { api } from '../client';
-import type { Document, PaginatedResponse } from '@unipdf/shared';
+import type { Document, PaginatedResponse } from '@lamina/shared';
 
 export interface ListDocumentsParams {
     page?: number;

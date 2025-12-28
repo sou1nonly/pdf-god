@@ -4,7 +4,7 @@
  */
 
 import { Response } from 'express';
-import type { ApiResponse, PaginatedResponse } from '@unipdf/shared';
+import type { ApiResponse, PaginatedResponse } from '@lamina/shared';
 
 /**
  * Send a success response

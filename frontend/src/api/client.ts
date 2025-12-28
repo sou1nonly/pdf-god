@@ -3,14 +3,14 @@
  * Base client for making API requests to the backend
  */
 
-import type { ApiResponse } from '@unipdf/shared';
+import type { ApiResponse } from '@lamina/shared';
 
 // API base URL from environment
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 // Token storage key
-const TOKEN_KEY = 'unipdf-access-token';
-const REFRESH_TOKEN_KEY = 'unipdf-refresh-token';
+const TOKEN_KEY = 'lamina-access-token';
+const REFRESH_TOKEN_KEY = 'lamina-refresh-token';
 
 /**
  * Get stored access token

@@ -5,7 +5,6 @@
 
 import { getSupabaseAdmin } from '../../config/supabase';
 import { ApiError } from '../../middleware/error.middleware';
-import { v4 as uuidv4 } from 'crypto';
 
 const BUCKET_NAME = 'documents';
 
@@ -43,14 +42,19 @@ export const uploadFile = async (
         throw ApiError.internal('Failed to upload file', 'STORAGE_UPLOAD_FAILED');
     }
 
-    // Get public URL (or signed URL for private buckets)
-    const { data: urlData } = supabase.storage
+    // Get signed URL for private bucket access (1 hour expiry)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from(BUCKET_NAME)
-        .getPublicUrl(storagePath);
+        .createSignedUrl(storagePath, 3600); // 1 hour expiry
+
+    if (signedUrlError || !signedUrlData) {
+        console.error('Signed URL error:', signedUrlError);
+        // Still return the path, URL can be generated on-demand
+    }
 
     return {
         path: storagePath,
-        url: urlData.publicUrl,
+        url: signedUrlData?.signedUrl || '', // Use signed URL, empty if failed
         size: file.size,
     };
 };

@@ -24,6 +24,7 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView, fitToWidt
   const textLayerRef = useRef<HTMLDivElement>(null);
   const annotationLayerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const renderTaskRef = useRef<any>(null); // Track current render task
   const [rendering, setRendering] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -55,12 +56,21 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView, fitToWidt
   useEffect(() => {
     if (!pdfDocument || !canvasRef.current || !isVisible) return;
 
+    // Cancel any previous render task
+    if (renderTaskRef.current) {
+      renderTaskRef.current.cancel();
+      renderTaskRef.current = null;
+    }
+
     const renderPage = async () => {
       try {
         setRendering(true);
         const page = await pdfDocument.getPage(pageNumber);
-        const canvas = canvasRef.current!;
-        const context = canvas.getContext('2d')!;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext('2d');
+        if (!context) return;
 
         let viewport = page.getViewport({
           scale: scale,
@@ -83,7 +93,12 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView, fitToWidt
           viewport: viewport,
         };
 
-        await page.render(renderContext).promise;
+        // Store render task so we can cancel it if needed
+        const renderTask = page.render(renderContext);
+        renderTaskRef.current = renderTask;
+
+        await renderTask.promise;
+        renderTaskRef.current = null;
 
         // Render Text Layer
         if (textLayerRef.current) {
@@ -100,44 +115,63 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView, fitToWidt
           await textLayer.render();
         }
 
-        // Render Annotation Layer
+        // Render Annotation Layer (wrapped in try-catch for linkService issues)
         if (annotationLayerRef.current) {
-          annotationLayerRef.current.innerHTML = '';
-          annotationLayerRef.current.style.height = `${viewport.height}px`;
-          annotationLayerRef.current.style.width = `${viewport.width}px`;
+          try {
+            annotationLayerRef.current.innerHTML = '';
+            annotationLayerRef.current.style.height = `${viewport.height}px`;
+            annotationLayerRef.current.style.width = `${viewport.width}px`;
 
-          const annotations = await page.getAnnotations();
-          const annotationLayer = new pdfjsLib.AnnotationLayer({
-            div: annotationLayerRef.current,
-            viewport: viewport.clone({ dontFlip: true }),
-            page: page,
-            accessibilityManager: null,
-            annotationCanvasMap: null,
-            annotationEditorUIManager: null,
-            structTreeLayer: null,
-            commentManager: null,
-            linkService: null,
-            annotationStorage: null
-          });
-          await annotationLayer.render({
-            annotations,
-            viewport: viewport.clone({ dontFlip: true }),
-            div: annotationLayerRef.current,
-            page: page,
-            linkService: null,
-            downloadManager: null,
-            renderForms: true,
-          });
+            const annotations = await page.getAnnotations();
+            if (annotations && annotations.length > 0) {
+              const annotationLayer = new pdfjsLib.AnnotationLayer({
+                div: annotationLayerRef.current,
+                viewport: viewport.clone({ dontFlip: true }),
+                page: page,
+                accessibilityManager: null,
+                annotationCanvasMap: null,
+                annotationEditorUIManager: null,
+                structTreeLayer: null,
+                commentManager: null,
+                linkService: null,
+                annotationStorage: null
+              });
+              await annotationLayer.render({
+                annotations,
+                viewport: viewport.clone({ dontFlip: true }),
+                div: annotationLayerRef.current,
+                page: page,
+                linkService: null,
+                downloadManager: null,
+                renderForms: false, // Disable forms to avoid linkService issues
+              });
+            }
+          } catch (annotationError) {
+            // Silently ignore annotation layer errors (common with null linkService)
+            console.debug('Annotation layer skipped:', annotationError);
+          }
         }
 
         setRendering(false);
-      } catch (error) {
+      } catch (error: any) {
+        // Ignore cancelled render errors
+        if (error?.name === 'RenderingCancelledException') {
+          return;
+        }
         console.error(`Error rendering page ${pageNumber}:`, error);
         setRendering(false);
       }
     };
 
     renderPage();
+
+    // Cleanup: cancel render on unmount or dependency change
+    return () => {
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+        renderTaskRef.current = null;
+      }
+    };
   }, [pdfDocument, pageNumber, scale, rotation, isVisible, fitToWidth, containerWidth]);
 
   return (

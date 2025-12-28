@@ -4,7 +4,7 @@
  */
 
 import { api } from '../client';
-import type { ChatMessage, AIKeyInfo, AISummaryLength, AIRewriteTone } from '@unipdf/shared';
+import type { ChatMessage, AIKeyInfo, AISummaryLength, AIRewriteTone } from '@lamina/shared';
 
 export interface ChatResponse {
     response: string;

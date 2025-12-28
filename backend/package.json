@@ -1,8 +1,8 @@
 {
-    "name": "@unipdf/backend",
+    "name": "@lamina/backend",
     "version": "1.0.0",
     "private": true,
-    "description": "UniPDF Studio Backend API Server",
+    "description": "Lamina Backend API Server",
     "main": "./dist/app.js",
     "scripts": {
         "dev": "tsx watch src/app.ts",
@@ -11,12 +11,13 @@
         "lint": "eslint src --ext .ts"
     },
     "dependencies": {
+        "@lamina/shared": "*",
         "@supabase/supabase-js": "^2.78.0",
-        "@unipdf/shared": "*",
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",
         "express": "^4.18.2",
         "express-rate-limit": "^7.1.5",
+        "file-type": "^16.5.4",
         "helmet": "^7.1.0",
         "morgan": "^1.10.0",
         "multer": "^1.4.5-lts.1",

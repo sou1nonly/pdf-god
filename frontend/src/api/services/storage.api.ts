@@ -4,7 +4,7 @@
  */
 
 import { api, getAccessToken } from '../client';
-import type { Document } from '@unipdf/shared';
+import type { Document } from '@lamina/shared';
 
 // API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
