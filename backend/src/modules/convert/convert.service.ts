@@ -10,11 +10,10 @@
  */
 
 import { ApiError } from '../../middleware/error.middleware';
-import PDFDocument from 'pdfkit';
 import type { ConvertOptions } from './convert.types';
 
-// Since pdfkit might not be installed, we'll do basic conversions
-// For production, you'd want to use pdf-lib or pdfkit
+// Note: Server-side PDF conversion is not yet implemented.
+// For production, you'd want to use pdf-lib, pdfkit, or a cloud service.
 
 /**
  * Convert image buffer to PDF buffer

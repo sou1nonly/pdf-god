@@ -67,7 +67,7 @@ const callGemini = async (prompt: string, systemInstruction?: string): Promise<s
             throw ApiError.internal('AI service error', 'AI_SERVICE_UNAVAILABLE');
         }
 
-        const data: GeminiResponse = await response.json();
+        const data = await response.json() as GeminiResponse;
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!text) {

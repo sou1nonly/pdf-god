@@ -50,7 +50,7 @@ export const googleAuth = async (
         }
 
         // Otherwise, return the OAuth URL for frontend to redirect
-        const authUrl = authService.getGoogleAuthUrl(redirectTo || '/');
+        const authUrl = await authService.getGoogleAuthUrl(redirectTo || '/');
         sendSuccess(res, { url: authUrl });
     } catch (error) {
         next(error);

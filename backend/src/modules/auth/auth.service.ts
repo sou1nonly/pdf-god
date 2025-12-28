@@ -106,10 +106,10 @@ export const signOut = async (accessToken?: string): Promise<void> => {
 /**
  * Get Google OAuth URL for frontend redirect
  */
-export const getGoogleAuthUrl = (redirectTo: string): string => {
+export const getGoogleAuthUrl = async (redirectTo: string): Promise<string> => {
     const supabase = getSupabaseAdmin();
 
-    const { data } = supabase.auth.signInWithOAuth({
+    const { data } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
             redirectTo,
