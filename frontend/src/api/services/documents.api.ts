@@ -4,7 +4,7 @@
  */
 
 import { api } from '../client';
-import type { Document, PaginatedResponse } from '@lamina/shared';
+import type { Document, PaginatedResponse } from '@/types';
 
 export interface ListDocumentsParams {
     page?: number;

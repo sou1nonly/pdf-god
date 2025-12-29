@@ -5,7 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { getSupabaseAdmin } from '../config/supabase';
-import type { User } from '@lamina/shared';
+import type { User } from '../types';
 
 // Extend Express Request to include user
 declare global {

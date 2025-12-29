@@ -5,7 +5,7 @@
 
 import { getSupabaseAdmin } from '../../config/supabase';
 import { ApiError } from '../../middleware/error.middleware';
-import type { Document } from '@lamina/shared';
+import type { Document } from '../../types';
 import type { ListDocumentsInput, CreateDocumentInput, UpdateDocumentInput } from './documents.types';
 
 // Helper to convert snake_case to camelCase

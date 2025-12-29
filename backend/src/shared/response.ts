@@ -4,7 +4,7 @@
  */
 
 import { Response } from 'express';
-import type { ApiResponse, PaginatedResponse } from '@lamina/shared';
+import type { ApiResponse, PaginatedResponse } from '../types';
 
 /**
  * Send a success response

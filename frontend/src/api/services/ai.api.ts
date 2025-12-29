@@ -4,7 +4,7 @@
  */
 
 import { api } from '../client';
-import type { ChatMessage, AIKeyInfo, AISummaryLength, AIRewriteTone } from '@lamina/shared';
+import type { ChatMessage, AIKeyInfo, AISummaryLength, AIRewriteTone } from '@/types';
 
 export interface ChatResponse {
     response: string;

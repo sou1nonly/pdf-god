@@ -6,7 +6,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useAIChat, useAISummarize, useAIRewrite, useAIQuestions } from "@/hooks/api";
 import { useAuth } from "@/contexts/AuthContext";
-import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@lamina/shared";
+import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@/types";
 
 // Approximate tokens by characters (1 token ≈ 4 chars for English)
 const MAX_TOKENS_FOR_QUESTIONS = 2000; // ~8000 chars

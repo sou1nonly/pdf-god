@@ -5,8 +5,7 @@
   "description": "Lamina - Professional PDF Editor with AI",
   "workspaces": [
     "backend",
-    "frontend",
-    "shared"
+    "frontend"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
@@ -16,14 +15,10 @@
     "build:backend": "npm run build --workspace=backend",
     "build:frontend": "npm run build --workspace=frontend",
     "lint": "npm run lint --workspaces",
-    "clean": "rimraf backend/dist frontend/dist",
-    "postinstall": "npm run build --workspace=shared"
+    "clean": "rimraf backend/dist frontend/dist"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "rimraf": "^5.0.5"
-  },
-  "engines": {
-    "node": "20.x"
   }
 }

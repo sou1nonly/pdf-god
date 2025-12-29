@@ -1,20 +1,198 @@
 /**
- * Shared API Types for UniPDF Studio
- * Request and Response types for the REST API
+ * Shared Types for Lamina Backend
+ * Data models and API types
  */
 
-import type {
-    User,
-    Document,
-    Annotation,
-    ChatMessage,
-    AISummaryLength,
-    AIRewriteTone,
-    AIKeyInfo,
-} from './models';
+// =============================================================================
+// User & Authentication
+// =============================================================================
+
+export interface User {
+    id: string;
+    email: string;
+    fullName: string | null;
+    avatarUrl: string | null;
+    isGuest: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface Session {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: number;
+    user: User;
+}
+
+export type AuthProvider = 'google' | 'anonymous';
 
 // =============================================================================
-// Generic API Response Types
+// Documents
+// =============================================================================
+
+export interface Document {
+    id: string;
+    userId: string;
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+    storagePath: string;
+    thumbnailUrl?: string | null;
+    pageCount?: number;
+    status: DocumentStatus;
+    isPublic: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type DocumentStatus = 'draft' | 'published' | 'archived';
+
+export interface DocumentVersion {
+    id: string;
+    documentId: string;
+    versionNumber: number;
+    fileUrl: string;
+    createdBy: string;
+    createdAt: string;
+}
+
+// =============================================================================
+// Annotations
+// =============================================================================
+
+export interface Annotation {
+    id: string;
+    documentId: string;
+    userId: string;
+    pageNumber: number;
+    type: AnnotationType;
+    content: AnnotationContent;
+    position?: AnnotationPosition;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type AnnotationType = 'comment' | 'highlight' | 'text' | 'drawing' | 'shape';
+
+export interface AnnotationContent {
+    objects?: FabricObject[];
+    version?: string;
+    text?: string;
+    color?: string;
+}
+
+export interface AnnotationPosition {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    pageX?: number;
+    pageY?: number;
+}
+
+export interface FabricObject {
+    type: string;
+    left: number;
+    top: number;
+    width?: number;
+    height?: number;
+    stroke?: string;
+    strokeWidth?: number;
+    fill?: string;
+    opacity?: number;
+    angle?: number;
+    scaleX?: number;
+    scaleY?: number;
+    path?: unknown[];
+    text?: string;
+    fontSize?: number;
+    fontFamily?: string;
+    layerId?: string;
+    [key: string]: unknown;
+}
+
+// =============================================================================
+// Layers
+// =============================================================================
+
+export interface Layer {
+    id: string;
+    name: string;
+    visible: boolean;
+    locked: boolean;
+    order: number;
+}
+
+// =============================================================================
+// PDF Hydration
+// =============================================================================
+
+export interface HydratedPage {
+    pageIndex: number;
+    dims: PageDimensions;
+    blocks: ContentBlock[];
+    backgroundBlob?: any; // Blob is not directly available in Node without polyfill, use any or Buffer
+}
+
+export interface PageDimensions {
+    width: number;
+    height: number;
+}
+
+export type ContentBlock = TextBlock | ImageBlock;
+
+export interface TextBlock {
+    type: 'text';
+    id: string;
+    box: BoundingBox;
+    html: string;
+    styles: TextStyles;
+}
+
+export interface ImageBlock {
+    type: 'image';
+    id: string;
+    box: BoundingBox;
+    blob: any;
+    mimeType: string;
+}
+
+export type BoundingBox = [number, number, number, number];
+
+export interface TextStyles {
+    fontSize: number;
+    fontWeight: number;
+    fontFamily: string;
+    color: string;
+    align: TextAlign;
+    italic: boolean;
+    lineHeight?: number;
+}
+
+export type TextAlign = 'left' | 'center' | 'right' | 'justify';
+
+// =============================================================================
+// AI Features
+// =============================================================================
+
+export type AISummaryLength = 'brief' | 'detailed';
+
+export type AIRewriteTone = 'formal' | 'casual' | 'concise' | 'detailed';
+
+export interface AIKeyInfo {
+    topics: string[];
+    keyPoints: string[];
+    entities: string[];
+}
+
+export interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    confidence?: number;
+}
+
+// =============================================================================
+// API Response Types
 // =============================================================================
 
 export interface ApiResponse<T = unknown> {
@@ -74,10 +252,6 @@ export interface GoogleAuthResponse {
     expiresAt: number;
 }
 
-export interface AnonymousAuthRequest {
-    deviceId?: string;
-}
-
 export interface AnonymousAuthResponse {
     user: User;
     accessToken: string;
@@ -93,10 +267,6 @@ export interface RefreshTokenResponse {
     accessToken: string;
     refreshToken: string;
     expiresAt: number;
-}
-
-export interface LogoutRequest {
-    refreshToken?: string;
 }
 
 export interface CurrentUserResponse {
@@ -151,10 +321,6 @@ export interface GetAnnotationsResponse {
     annotations: Record<number, Annotation>;
 }
 
-export interface GetPageAnnotationsResponse {
-    annotation: Annotation | null;
-}
-
 export interface SaveAnnotationsRequest {
     pageNumber: number;
     type: 'drawing';
@@ -168,11 +334,6 @@ export interface SaveAnnotationsResponse {
     annotation: Annotation;
 }
 
-export interface DeleteAnnotationsResponse {
-    deleted: boolean;
-    count?: number;
-}
-
 // =============================================================================
 // Storage API
 // =============================================================================
@@ -182,21 +343,6 @@ export interface UploadFileResponse {
     url: string;
     path: string;
     size: number;
-}
-
-export interface DownloadFileResponse {
-    blob: Blob;
-    contentType: string;
-    size: number;
-}
-
-export interface GetSignedUrlResponse {
-    signedUrl: string;
-    expiresAt: number;
-}
-
-export interface DeleteFileResponse {
-    deleted: boolean;
 }
 
 // =============================================================================
@@ -242,36 +388,8 @@ export interface AIQuestionsResponse {
     questions: string[];
 }
 
-export interface AIExtractRequest {
-    documentText: string;
-}
-
 export interface AIExtractResponse {
     keyInfo: AIKeyInfo;
-}
-
-// =============================================================================
-// Convert API
-// =============================================================================
-
-export interface ConvertImageRequest {
-    file: File;
-    quality?: 'low' | 'medium' | 'high';
-}
-
-export interface ConvertTextRequest {
-    file: File;
-}
-
-export interface ConvertDocumentRequest {
-    file: File;
-}
-
-export interface ConvertResponse {
-    success: boolean;
-    pdfBlob?: Blob;
-    pdfUrl?: string;
-    error?: string;
 }
 
 // =============================================================================
@@ -279,31 +397,15 @@ export interface ConvertResponse {
 // =============================================================================
 
 export const ErrorCodes = {
-    // Auth errors
     AUTH_REQUIRED: 'AUTH_REQUIRED',
     AUTH_INVALID_TOKEN: 'AUTH_INVALID_TOKEN',
     AUTH_EXPIRED_TOKEN: 'AUTH_EXPIRED_TOKEN',
-    AUTH_INVALID_CREDENTIALS: 'AUTH_INVALID_CREDENTIALS',
-
-    // Document errors
     DOCUMENT_NOT_FOUND: 'DOCUMENT_NOT_FOUND',
     DOCUMENT_ACCESS_DENIED: 'DOCUMENT_ACCESS_DENIED',
-    DOCUMENT_INVALID_TYPE: 'DOCUMENT_INVALID_TYPE',
-
-    // Storage errors
     STORAGE_UPLOAD_FAILED: 'STORAGE_UPLOAD_FAILED',
-    STORAGE_FILE_NOT_FOUND: 'STORAGE_FILE_NOT_FOUND',
-    STORAGE_FILE_TOO_LARGE: 'STORAGE_FILE_TOO_LARGE',
-
-    // AI errors
     AI_SERVICE_UNAVAILABLE: 'AI_SERVICE_UNAVAILABLE',
     AI_RATE_LIMITED: 'AI_RATE_LIMITED',
-    AI_INVALID_REQUEST: 'AI_INVALID_REQUEST',
-
-    // Validation errors
     VALIDATION_FAILED: 'VALIDATION_FAILED',
-
-    // Generic errors
     INTERNAL_ERROR: 'INTERNAL_ERROR',
     NOT_FOUND: 'NOT_FOUND',
     BAD_REQUEST: 'BAD_REQUEST',

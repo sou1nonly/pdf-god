@@ -4,7 +4,7 @@
  */
 
 import { annotationsApi } from '@/api/services/annotations.api';
-import type { Annotation } from '@lamina/shared';
+import type { Annotation } from '@/types';
 
 // Type definition for legacy compatibility
 export interface AnnotationRecord {

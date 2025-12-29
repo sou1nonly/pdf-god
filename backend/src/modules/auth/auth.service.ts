@@ -5,7 +5,7 @@
 
 import { getSupabaseAdmin } from '../../config/supabase';
 import { ApiError } from '../../middleware/error.middleware';
-import type { User } from '@lamina/shared';
+import type { User } from '../../types';
 
 /**
  * Get user by Supabase access token

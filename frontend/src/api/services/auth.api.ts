@@ -4,7 +4,7 @@
  */
 
 import { api, storeTokens, clearTokens, getRefreshToken } from '../client';
-import type { User } from '@lamina/shared';
+import type { User } from '@/types';
 
 export interface AuthResponse {
     user: User;

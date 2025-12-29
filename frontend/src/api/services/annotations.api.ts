@@ -4,7 +4,7 @@
  */
 
 import { api } from '../client';
-import type { Annotation } from '@lamina/shared';
+import type { Annotation } from '@/types';
 
 export interface AnnotationsResponse {
     annotations: Record<number, Annotation>;

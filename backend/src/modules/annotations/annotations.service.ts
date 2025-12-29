@@ -5,7 +5,7 @@
 
 import { getSupabaseAdmin } from '../../config/supabase';
 import { ApiError } from '../../middleware/error.middleware';
-import type { Annotation, AnnotationType, AnnotationContent } from '@lamina/shared';
+import type { Annotation, AnnotationType, AnnotationContent } from '../../types';
 
 // Helper to convert database row to Annotation
 const toAnnotation = (row: any): Annotation => ({
