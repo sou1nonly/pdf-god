@@ -1,0 +1,9 @@
+{
+    "name": "@lamina/api",
+    "version": "1.0.0",
+    "private": true,
+    "dependencies": {
+        "@supabase/supabase-js": "^2.78.0",
+        "@vercel/node": "^5.0.0"
+    }
+}

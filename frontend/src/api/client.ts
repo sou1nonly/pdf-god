@@ -5,8 +5,8 @@
 
 import type { ApiResponse } from '@/types';
 
-// API base URL from environment
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// API base URL - relative path for unified Vercel deployment
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Token storage key
 const TOKEN_KEY = 'lamina-access-token';
