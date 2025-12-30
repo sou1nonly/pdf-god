@@ -85,16 +85,24 @@ export const uploadFile = async (
 };
 
 /**
- * Download a file as Blob
+ * Download a file as Blob - uses Supabase signed URL directly for reliability
  */
 export const downloadFile = async (storagePath: string): Promise<Blob> => {
-    // Encode each path segment separately to preserve the "/" for Vercel routing
-    const encodedPath = storagePath.split('/').map(encodeURIComponent).join('/');
-    const response = await fetch(`${API_BASE_URL}/storage/file/${encodedPath}`, {
-        headers: {
-            Authorization: `Bearer ${getAccessToken()}`,
-        },
-    });
+    // Import supabase client directly to avoid Vercel API routing issues
+    const { supabase } = await import('@/integrations/supabase/client');
+
+    // Create a signed URL that expires in 1 hour
+    const { data, error } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(storagePath, 3600);
+
+    if (error || !data?.signedUrl) {
+        console.error('Failed to create signed URL:', error);
+        throw new Error('Failed to get download URL');
+    }
+
+    // Fetch the file using the signed URL
+    const response = await fetch(data.signedUrl);
 
     if (!response.ok) {
         throw new Error(`Download failed with status ${response.status}`);
