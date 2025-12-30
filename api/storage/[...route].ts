@@ -29,6 +29,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const action = route?.[0] || '';
     const pathParam = route?.slice(1).join('/') || '';
 
+    console.log('[Storage API] Route:', route, 'Action:', action, 'PathParam:', pathParam);
+
     try {
         const user = await requireAuth(req);
         const supabase = getSupabaseAdmin();
