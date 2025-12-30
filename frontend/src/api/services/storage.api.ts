@@ -88,7 +88,7 @@ export const uploadFile = async (
  * Download a file as Blob
  */
 export const downloadFile = async (storagePath: string): Promise<Blob> => {
-    const response = await fetch(`${API_BASE_URL}/storage/download/${encodeURIComponent(storagePath)}`, {
+    const response = await fetch(`${API_BASE_URL}/storage/file/${encodeURIComponent(storagePath)}`, {
         headers: {
             Authorization: `Bearer ${getAccessToken()}`,
         },

@@ -108,8 +108,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return sendSuccess(res, { url: data.signedUrl, expiresIn: parseInt(expiresIn) });
         }
 
-        // GET /api/storage/download/:path
-        if (req.method === 'GET' && action === 'download' && pathParam) {
+        // GET /api/storage/file/:path
+        if (req.method === 'GET' && action === 'file' && pathParam) {
             // Verify ownership
             const pathParts = pathParam.split('/');
             if (pathParts[0] !== user.id) {
