@@ -88,7 +88,9 @@ export const uploadFile = async (
  * Download a file as Blob
  */
 export const downloadFile = async (storagePath: string): Promise<Blob> => {
-    const response = await fetch(`${API_BASE_URL}/storage/file/${encodeURIComponent(storagePath)}`, {
+    // Encode each path segment separately to preserve the "/" for Vercel routing
+    const encodedPath = storagePath.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${API_BASE_URL}/storage/file/${encodedPath}`, {
         headers: {
             Authorization: `Bearer ${getAccessToken()}`,
         },
