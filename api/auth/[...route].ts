@@ -88,7 +88,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // POST /api/auth/google
         if (req.method === 'POST' && path === 'google') {
-            const { redirectTo, code } = { ...req.body, ...req.query };
+            const body = req.body || {};
+            const query = req.query || {};
+            const redirectTo = (body.redirectTo as string) || (query.redirectTo as string);
+            const code = (body.code as string) || (query.code as string);
             const supabase = getSupabaseAdmin();
 
             // If code provided, exchange for session
