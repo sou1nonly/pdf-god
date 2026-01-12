@@ -347,7 +347,12 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
             {filteredDocuments.map((doc) => (
               <Card
                 key={doc.id}
-                className="p-4 transition-all group border-2 border-border/70 hover:border-primary/40 bg-white rounded-2xl shadow-sm hover:shadow-lg"
+                className="p-4 group cursor-pointer
+                  bg-white/95 backdrop-blur-sm
+                  border-2 border-border hover:border-primary/50
+                  rounded-2xl shadow-layer-sm
+                  transition-all duration-300 ease-out
+                  hover:shadow-layer-lg hover:-translate-y-1"
               >
                 {viewMode === 'grid' ? (
                   <div className="space-y-3">

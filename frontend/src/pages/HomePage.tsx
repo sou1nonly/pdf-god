@@ -100,7 +100,7 @@ const HomePage = () => {
       </div>
 
       <div className="p-4 border-t border-sidebar-border/50">
-        <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-2xl p-4 border border-primary/10">
+        <div className="glass-premium rounded-2xl p-4 border border-primary/20">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="h-4 w-4 text-primary" />
             <span className="font-semibold text-sm text-primary">Pro Plan</span>
@@ -108,28 +108,44 @@ const HomePage = () => {
           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
             Unlock advanced AI features and unlimited storage.
           </p>
-          <Button size="sm" className="w-full bg-primary hover:bg-primary-hover text-white shadow-soft font-medium">Upgrade</Button>
+          <Button size="sm" className="w-full bg-primary hover:bg-primary-hover text-white btn-primary-glow font-medium animate-pulse-glow">Upgrade</Button>
         </div>
       </div>
     </div>
   );
 
-  const QuickActionCard = ({ icon: Icon, label, description, onClick, colorClass }: any) => (
+  const QuickActionCard = ({ icon: Icon, label, description, onClick, colorClass, index = 0 }: any) => (
     <button
       onClick={onClick}
-      className="relative overflow-hidden group p-6 rounded-2xl h-40 w-full text-left transition-all duration-300 hover:-translate-y-1 bg-white border border-border hover:border-primary/40 shadow-sm hover:shadow-md"
+      className={`
+        relative overflow-hidden group p-6 rounded-2xl h-40 w-full text-left cursor-pointer
+        bg-white/95 backdrop-blur-sm
+        border-2 border-border hover:border-primary/60
+        shadow-layer-sm hover:shadow-layer-lg
+        transition-all duration-300 ease-out
+        hover:-translate-y-2
+        animate-slide-up opacity-0
+      `}
+      style={{ animationDelay: `${index * 0.08}s`, animationFillMode: 'forwards' }}
     >
-      <div className={`h-12 w-12 rounded-xl ${colorClass.bg} flex items-center justify-center mb-4 transition-transform group-hover:scale-110`}>
+      {/* Inner border highlight on hover */}
+      <div className="absolute inset-[2px] rounded-[14px] bg-gradient-to-br from-white/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+      {/* Subtle gradient overlay on hover */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/0 to-primary/0 group-hover:from-primary/5 group-hover:to-purple-500/5 transition-all duration-500" />
+
+      {/* Icon container with enhanced styling and border */}
+      <div className={`relative h-12 w-12 rounded-xl ${colorClass.bg} flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110 group-hover:shadow-md border border-black/5`}>
         <Icon className={`h-6 w-6 ${colorClass.icon}`} />
       </div>
 
       <div className="z-10 relative">
-        <h3 className="font-bold text-foreground text-lg tracking-tight mb-1">{label}</h3>
+        <h3 className="font-bold text-foreground text-lg tracking-tight mb-1 group-hover:text-primary transition-colors duration-200">{label}</h3>
         <p className="text-sm text-muted-foreground font-medium">{description}</p>
       </div>
 
-      {/* Subtle decorative watermark */}
-      <Icon className="absolute -right-4 -bottom-4 h-24 w-24 opacity-[0.05] rotate-12 transition-transform group-hover:rotate-6" />
+      {/* Decorative watermark with enhanced opacity on hover */}
+      <Icon className="absolute -right-4 -bottom-4 h-24 w-24 opacity-[0.03] group-hover:opacity-[0.08] rotate-12 transition-all duration-500 group-hover:rotate-6 group-hover:scale-110" />
     </button>
   );
 
@@ -170,9 +186,9 @@ const HomePage = () => {
             </Button>
 
 
-            {/* Create Design button - opens global upload dialog */}
+            {/* Create Design button - premium styling */}
             <Button
-              className="hidden sm:flex bg-primary hover:bg-primary-hover text-white shadow-glow rounded-xl h-11 px-6 font-semibold"
+              className="hidden sm:flex bg-primary hover:bg-primary-hover text-white btn-primary-glow rounded-xl h-11 px-6 font-semibold transition-all duration-300 hover:scale-[1.02]"
               onClick={() => setIsUploadOpen(true)}
             >
               <Plus className="h-5 w-5 mr-2" />
@@ -223,26 +239,25 @@ const HomePage = () => {
           <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-10 pb-20">
 
             {/* Hero Section */}
-            <section className="text-center space-y-12 py-8 md:py-12 fade-in max-w-4xl mx-auto">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider animate-fade-in-up">
+            <section className="text-center space-y-12 py-8 md:py-12 max-w-4xl mx-auto">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider animate-scale-in">
                 <Sparkles className="h-3.5 w-3.5" />
                 <span>The new standard for docs</span>
               </div>
-              <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-foreground">
-                <span className="block">What will you <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-purple-500 to-pink-500">design</span></span>
+              <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-foreground animate-fade-in-up">
+                <span className="block">What will you <span className="text-gradient-primary animate-gradient">design</span></span>
                 <span className="block mt-2 md:mt-4">today?</span>
               </h1>
 
               {/* Quick Actions Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-14">
-                {/* Upload PDF Card - just opens dialog */}
-                {/* Upload PDF Card - just opens dialog */}
                 <QuickActionCard
                   icon={Upload}
                   label="Upload PDF"
                   description="Edit & Sign"
                   colorClass={{ bg: 'bg-pastel-blue', icon: 'text-blue-900' }}
                   onClick={() => setIsUploadOpen(true)}
+                  index={0}
                 />
 
                 <QuickActionCard
@@ -251,6 +266,7 @@ const HomePage = () => {
                   description="Start Blank"
                   colorClass={{ bg: 'bg-pastel-green', icon: 'text-green-900' }}
                   onClick={() => toast.success("Starting new document...")}
+                  index={1}
                 />
 
                 <QuickActionCard
@@ -259,6 +275,7 @@ const HomePage = () => {
                   description="Brainstorm"
                   colorClass={{ bg: 'bg-pastel-yellow', icon: 'text-yellow-900' }}
                   onClick={() => toast.info("Whiteboard feature coming soon!")}
+                  index={2}
                 />
 
                 <QuickActionCard
@@ -267,18 +284,18 @@ const HomePage = () => {
                   description="Ask PDF"
                   colorClass={{ bg: 'bg-pastel-pink', icon: 'text-pink-900' }}
                   onClick={() => toast.info("Select a document to start AI Chat")}
+                  index={3}
                 />
               </div>
             </section>
 
             {/* Integrated Documents Section */}
-            <section id="documents-section" className="space-y-6 pt-8">
+            <section id="documents-section" className="space-y-6 pt-8 animate-fade-in-up stagger-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold tracking-tight">Your Projects</h2>
-                {/* DocumentsList handles its own toggle controls */}
               </div>
 
-              <div className="bg-card/50 rounded-3xl p-1 md:p-6 min-h-[400px] border border-border/50">
+              <div className="glass-premium rounded-3xl p-1 md:p-6 min-h-[400px]">
                 <DocumentsList embedded onUploadClick={() => setIsUploadOpen(true)} />
               </div>
             </section>

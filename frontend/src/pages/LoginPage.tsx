@@ -52,12 +52,12 @@ const LoginPage = () => {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] p-8 md:p-12 lg:p-16">
-            {/* Centered White Card */}
-            <div className="w-full max-w-6xl bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row">
+        <div className="min-h-screen h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-3 md:p-6 lg:p-8 overflow-hidden">
+            {/* Centered White Card with Glass Effect - constrained to viewport */}
+            <div className="w-full max-w-5xl max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-3rem)] glass-premium rounded-2xl md:rounded-3xl shadow-layer-lg overflow-hidden flex flex-col md:flex-row animate-scale-in">
 
                 {/* Left Section - Animated Carousel */}
-                <div className="w-full md:w-[55%] bg-white p-8 md:p-12 lg:p-16 flex flex-col items-center justify-center relative">
+                <div className="w-full md:w-1/2 bg-white/50 p-4 md:p-6 lg:p-8 flex flex-col items-center justify-center relative overflow-hidden">
                     {/* Slides */}
                     <div className="relative w-full">
                         {slides.map((slide, index) => (
@@ -71,13 +71,13 @@ const LoginPage = () => {
                                 <img
                                     src={slide.image}
                                     alt={slide.title}
-                                    className="w-full h-auto object-contain max-h-[528px]"
+                                    className="w-full h-auto object-contain max-h-[240px] md:max-h-[336px] mx-auto"
                                 />
-                                <div className="text-center mt-8">
-                                    <h2 className="text-xl font-semibold text-foreground">
+                                <div className="text-center mt-4">
+                                    <h2 className="text-base md:text-lg font-semibold text-foreground">
                                         {slide.title}
                                     </h2>
-                                    <p className="text-muted-foreground text-sm mt-1">
+                                    <p className="text-muted-foreground text-xs md:text-sm mt-1">
                                         {slide.description}
                                     </p>
                                 </div>
@@ -86,14 +86,14 @@ const LoginPage = () => {
                     </div>
 
                     {/* Dot Indicators */}
-                    <div className="flex gap-2 mt-6">
+                    <div className="flex gap-2 mt-3">
                         {slides.map((_, index) => (
                             <button
                                 key={index}
                                 onClick={() => setCurrentSlide(index)}
-                                className={`h-2 rounded-full transition-all duration-300 ${index === currentSlide
-                                    ? 'w-6 bg-primary'
-                                    : 'w-2 bg-gray-300 hover:bg-gray-400'
+                                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${index === currentSlide
+                                    ? 'w-5 bg-primary'
+                                    : 'w-1.5 bg-gray-300 hover:bg-gray-400'
                                     }`}
                                 aria-label={`Go to slide ${index + 1}`}
                             />
@@ -102,19 +102,19 @@ const LoginPage = () => {
                 </div>
 
                 {/* Right Section - Auth Form */}
-                <div className="w-full md:w-[45%] p-8 md:p-12 flex flex-col justify-center border-l border-border/50">
-                    <div className="w-full max-w-sm mx-auto space-y-6">
+                <div className="w-full md:w-1/2 p-4 md:p-5 lg:p-6 flex flex-col justify-center bg-white/80 border-l border-border/30">
+                    <div className="w-full max-w-sm mx-auto space-y-3">
                         {/* Logo */}
                         <img
                             src="/logo-full.png"
                             alt="Lamina"
-                            className="h-[70px] w-auto object-contain mb-2"
+                            className="h-10 md:h-12 w-auto object-contain"
                         />
 
                         {/* Header */}
-                        <div className="space-y-1">
-                            <h2 className="text-2xl font-bold tracking-tight">Welcome Back</h2>
-                            <p className="text-muted-foreground">Sign in to access your workspace</p>
+                        <div className="space-y-0.5">
+                            <h2 className="text-xl md:text-2xl font-bold tracking-tight">Welcome Back</h2>
+                            <p className="text-muted-foreground text-xs md:text-sm">Sign in to access your workspace</p>
                         </div>
 
                         {/* Auth Form */}
@@ -141,9 +141,9 @@ const LoginPage = () => {
                                                 labelFontFamily: 'Plus Jakarta Sans, sans-serif',
                                             },
                                             radii: {
-                                                borderRadiusButton: '0.5rem',
-                                                buttonBorderRadius: '0.5rem',
-                                                inputBorderRadius: '0.5rem',
+                                                borderRadiusButton: '0.75rem',
+                                                buttonBorderRadius: '0.75rem',
+                                                inputBorderRadius: '0.75rem',
                                             },
                                             space: {
                                                 inputPadding: '12px 14px',
@@ -158,8 +158,8 @@ const LoginPage = () => {
                                     },
                                     className: {
                                         container: 'w-full',
-                                        button: 'w-full font-medium',
-                                        input: 'w-full',
+                                        button: 'w-full font-medium shadow-sm hover:shadow-md transition-shadow',
+                                        input: 'w-full border-2 focus:border-primary',
                                         label: 'font-medium mb-1.5 block text-foreground',
                                         loader: 'text-primary',
                                         anchor: 'text-primary hover:underline text-sm',
@@ -174,9 +174,9 @@ const LoginPage = () => {
                         </div>
 
                         {/* Divider */}
-                        <div className="relative">
+                        <div className="relative py-1">
                             <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t" />
+                                <span className="w-full border-t border-border" />
                             </div>
                             <div className="relative flex justify-center">
                                 <span className="bg-white px-3 text-xs text-muted-foreground">
@@ -188,7 +188,7 @@ const LoginPage = () => {
                         {/* Guest Mode */}
                         <Button
                             variant="outline"
-                            className="w-full h-11 rounded-lg font-medium"
+                            className="w-full h-11 rounded-xl font-medium border-2 border-border hover:border-primary/50 hover:bg-primary/5 transition-all"
                             onClick={async () => {
                                 try {
                                     await signInAnonymously();
