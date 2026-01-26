@@ -203,9 +203,13 @@ export type AISummaryLength = 'brief' | 'detailed';
 export type AIRewriteTone = 'formal' | 'casual' | 'concise' | 'detailed';
 
 export interface AIKeyInfo {
-  topics: string[];
+  title: string;
+  summary: string;
+  topics?: string[];
   keyPoints: string[];
   entities: string[];
+  dates: string[];
+  numbers: string[];
 }
 
 export interface ChatMessage {
