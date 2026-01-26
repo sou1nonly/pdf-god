@@ -84,7 +84,14 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
  * Build URL with query parameters
  */
 const buildUrl = (path: string, params?: Record<string, string | number | boolean | undefined>): string => {
-    const url = new URL(`${API_BASE_URL}${path}`);
+    // Handle relative URLs by using window.location.origin as base
+    // This fixes "Invalid URL" errors when API_BASE_URL is a relative path like "/api"
+    const fullPath = `${API_BASE_URL}${path}`;
+    const isAbsoluteUrl = fullPath.startsWith('http://') || fullPath.startsWith('https://');
+
+    const url = isAbsoluteUrl
+        ? new URL(fullPath)
+        : new URL(fullPath, window.location.origin);
 
     if (params) {
         Object.entries(params).forEach(([key, value]) => {
