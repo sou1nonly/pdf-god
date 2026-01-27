@@ -189,93 +189,123 @@ async function handleAnnotations(
     documentId: string,
     subRoute?: string[]
 ) {
-    const supabase = getSupabaseAdmin();
-    const pageNumber = subRoute?.[0] ? parseInt(subRoute[0]) : undefined;
+    try {
+        const supabase = getSupabaseAdmin();
+        const pageNumber = subRoute?.[0] ? parseInt(subRoute[0]) : undefined;
 
-    // GET /api/documents/:id/annotations
-    if (req.method === 'GET' && !pageNumber) {
-        const { data, error } = await supabase
-            .from('annotations')
-            .select('*')
-            .eq('document_id', documentId)
-            .eq('user_id', userId);
+        // GET /api/documents/:id/annotations
+        if (req.method === 'GET' && !pageNumber) {
+            const { data, error } = await supabase
+                .from('annotations')
+                .select('*')
+                .eq('document_id', documentId)
+                .eq('user_id', userId);
 
-        if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to fetch annotations', status: 500 };
+            if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to fetch annotations', status: 500 };
 
-        const annotationsMap: Record<number, any> = {};
-        for (const row of data || []) {
-            annotationsMap[row.page_number] = {
-                id: row.id,
-                documentId: row.document_id,
-                userId: row.user_id,
-                pageNumber: row.page_number,
-                type: row.type,
-                content: row.content,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
-            };
+            const annotationsMap: Record<number, any> = {};
+            for (const row of data || []) {
+                annotationsMap[row.page_number] = {
+                    id: row.id,
+                    documentId: row.document_id,
+                    userId: row.user_id,
+                    pageNumber: row.page_number,
+                    type: row.type,
+                    content: row.content,
+                    createdAt: row.created_at,
+                    updatedAt: row.updated_at,
+                };
+            }
+
+            return sendSuccess(res, { annotations: annotationsMap });
         }
 
-        return sendSuccess(res, { annotations: annotationsMap });
+        // GET /api/documents/:id/annotations/:pageNumber
+        if (req.method === 'GET' && pageNumber !== undefined) {
+            const { data } = await supabase
+                .from('annotations')
+                .select('*')
+                .eq('document_id', documentId)
+                .eq('user_id', userId)
+                .eq('page_number', pageNumber)
+                .single();
+
+            return sendSuccess(res, { annotation: data || null });
+        }
+
+        // POST /api/documents/:id/annotations
+        if (req.method === 'POST') {
+            const { pageNumber: pn, type, content } = req.body || {};
+
+            // Check if annotation already exists for this page
+            const { data: existing } = await supabase
+                .from('annotations')
+                .select('id')
+                .eq('document_id', documentId)
+                .eq('user_id', userId)
+                .eq('page_number', pn)
+                .single();
+
+            let data, error;
+
+            if (existing?.id) {
+                // Update existing annotation
+                const result = await supabase
+                    .from('annotations')
+                    .update({ type, content, updated_at: new Date().toISOString() })
+                    .eq('id', existing.id)
+                    .select()
+                    .single();
+                data = result.data;
+                error = result.error;
+            } else {
+                // Insert new annotation
+                const result = await supabase
+                    .from('annotations')
+                    .insert({
+                        document_id: documentId,
+                        user_id: userId,
+                        page_number: pn,
+                        type,
+                        content,
+                    })
+                    .select()
+                    .single();
+                data = result.data;
+                error = result.error;
+            }
+
+            if (error) throw { code: 'INTERNAL_ERROR', message: error.message || 'Failed to save annotations', status: 500 };
+            return sendSuccess(res, { annotation: data });
+        }
+
+        // DELETE /api/documents/:id/annotations/:pageNumber
+        if (req.method === 'DELETE' && pageNumber !== undefined) {
+            const { error, count } = await supabase
+                .from('annotations')
+                .delete()
+                .eq('document_id', documentId)
+                .eq('user_id', userId)
+                .eq('page_number', pageNumber);
+
+            if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to delete annotations', status: 500 };
+            return sendSuccess(res, { deleted: true, count });
+        }
+
+        // DELETE /api/documents/:id/annotations
+        if (req.method === 'DELETE' && !pageNumber) {
+            const { error, count } = await supabase
+                .from('annotations')
+                .delete()
+                .eq('document_id', documentId)
+                .eq('user_id', userId);
+
+            if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to delete annotations', status: 500 };
+            return sendSuccess(res, { deleted: true, count });
+        }
+
+        return sendError(res, 'NOT_FOUND', 'Route not found', 404);
+    } catch (error) {
+        return handleError(res, error);
     }
-
-    // GET /api/documents/:id/annotations/:pageNumber
-    if (req.method === 'GET' && pageNumber !== undefined) {
-        const { data } = await supabase
-            .from('annotations')
-            .select('*')
-            .eq('document_id', documentId)
-            .eq('user_id', userId)
-            .eq('page_number', pageNumber)
-            .single();
-
-        return sendSuccess(res, { annotation: data || null });
-    }
-
-    // POST /api/documents/:id/annotations
-    if (req.method === 'POST') {
-        const { pageNumber: pn, type, content } = req.body || {};
-
-        const { data, error } = await supabase
-            .from('annotations')
-            .upsert({
-                document_id: documentId,
-                user_id: userId,
-                page_number: pn,
-                type,
-                content,
-            }, { onConflict: 'document_id,user_id,page_number' })
-            .select()
-            .single();
-
-        if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to save annotations', status: 500 };
-        return sendSuccess(res, { annotation: data });
-    }
-
-    // DELETE /api/documents/:id/annotations/:pageNumber
-    if (req.method === 'DELETE' && pageNumber !== undefined) {
-        const { error, count } = await supabase
-            .from('annotations')
-            .delete()
-            .eq('document_id', documentId)
-            .eq('user_id', userId)
-            .eq('page_number', pageNumber);
-
-        if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to delete annotations', status: 500 };
-        return sendSuccess(res, { deleted: true, count });
-    }
-
-    // DELETE /api/documents/:id/annotations
-    if (req.method === 'DELETE' && !pageNumber) {
-        const { error, count } = await supabase
-            .from('annotations')
-            .delete()
-            .eq('document_id', documentId)
-            .eq('user_id', userId);
-
-        if (error) throw { code: 'INTERNAL_ERROR', message: 'Failed to delete annotations', status: 500 };
-        return sendSuccess(res, { deleted: true, count });
-    }
-
-    return sendError(res, 'NOT_FOUND', 'Route not found', 404);
 }

@@ -265,7 +265,7 @@ const HomePage = () => {
                   label="New Doc"
                   description="Start Blank"
                   colorClass={{ bg: 'bg-pastel-green', icon: 'text-green-900' }}
-                  onClick={() => toast.success("Starting new document...")}
+                  onClick={() => navigate('/editor', { state: { isBlank: true } })}
                   index={1}
                 />
 

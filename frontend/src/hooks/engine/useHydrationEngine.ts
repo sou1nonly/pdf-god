@@ -252,5 +252,25 @@ export const useHydrationEngine = () => {
     });
   }, []);
 
-  return { processFile, pages, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles, addTextBlock };
+  // Create a blank page with specified dimensions (for New Document feature)
+  const createBlankPage = useCallback((width: number, height: number) => {
+    const blankPage: HydratedPageWithUrl = {
+      pageIndex: 0,
+      dims: { width, height },
+      blocks: [],
+      backgroundBlob: null,
+      backgroundUrl: undefined,
+      meta: {
+        lineHeightEstimate: null,
+        avgFontSize: null,
+      },
+    };
+
+    setPages([blankPage]);
+    setStatus('complete');
+    setProgress(100);
+    setStageInfo({ stage: 'complete', message: 'Blank document created!' });
+  }, []);
+
+  return { processFile, pages, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles, addTextBlock, createBlankPage };
 };

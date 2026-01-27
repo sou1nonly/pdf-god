@@ -14,6 +14,7 @@ import { CanvaToolbar } from "@/components/editor/CanvaToolbar";
 import { ColorPanel } from "@/components/editor/ColorPanel";
 import { SignatureModal } from "@/components/editor/SignatureModal";
 import { TextToolbar } from "@/components/editor/TextToolbar";
+import { NewDocumentForm } from "@/components/editor/NewDocumentForm";
 import { LayersPanel } from "@/components/editor/canvas/LayersPanel";
 import { Layer } from "@/components/editor/types";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
@@ -23,7 +24,7 @@ import { saveAnnotations, loadAnnotations } from "@/lib/annotations-service";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadFile } from "@/lib/storage";
+import { downloadFile, createAndSaveBlankDocument } from "@/lib/storage";
 import type { DrawingTool } from "@/components/editor/types";
 
 const EditorPage = () => {
@@ -330,7 +331,7 @@ const EditorPage = () => {
     setHasUnsavedChanges(true);
   }, []);
 
-  const { processFile, pages, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles, addTextBlock } = useHydrationEngine();
+  const { processFile, pages, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles, addTextBlock, createBlankPage } = useHydrationEngine();
 
   // Extract text from pages for AI (memoized) - must be after useHydrationEngine
   const documentText = useMemo(() => {
@@ -430,7 +431,16 @@ const EditorPage = () => {
   useEffect(() => {
     const loadDocument = async () => {
       // Check for local file from navigation state (Guest Mode)
-      const state = location.state as { fileUrl?: string; fileName?: string; isLocal?: boolean } | null;
+      const state = location.state as { fileUrl?: string; fileName?: string; isLocal?: boolean; isBlank?: boolean } | null;
+
+      // Handle blank document mode - just set up empty canvas
+      if (state?.isBlank) {
+        console.log("Starting new blank document");
+        setFileName("New Document.pdf");
+        setViewMode('edit');
+        toast.success("New blank document created");
+        return;
+      }
 
       if (state?.fileUrl && state?.isLocal) {
         console.log("Loading local file (Guest Mode):", state.fileName);
@@ -624,9 +634,10 @@ const EditorPage = () => {
       const failed = results.filter(r => !r.success);
 
       if (failed.length > 0) {
-        console.warn('Some annotations failed to save:', failed);
+        const errorMessages = failed.map(f => f.error).filter(Boolean).join(', ');
+        console.error('Annotations save failed:', errorMessages, failed);
         toast.warning(`Saved ${results.length - failed.length}/${results.length} pages`, {
-          description: 'Some annotations could not be synced to cloud'
+          description: errorMessages || 'Some annotations could not be synced to cloud'
         });
       } else {
         toast.success("Document saved successfully!", {
@@ -768,8 +779,10 @@ const EditorPage = () => {
 
   // Determine what to show in Edit mode
   const renderEditMode = () => {
-    // Show processing overlay while hydrating
-    if (status === 'processing' || status === 'idle') {
+    const isBlankDocument = (location.state as any)?.isBlank;
+
+    // Show processing overlay while hydrating (but not for blank documents)
+    if ((status === 'processing' || status === 'idle') && !isBlankDocument) {
       return <ProcessingOverlay stageInfo={stageInfo} progress={progress} />;
     }
 
@@ -833,11 +846,29 @@ const EditorPage = () => {
       );
     }
 
-    // Fallback
+    // Fallback - Show blank canvas for new documents
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400">
-        <FileText className="w-12 h-12 mb-4 opacity-50" />
-        <p>No content to display</p>
+      <div ref={pageContainerRef} className="flex flex-col items-center justify-center h-full w-full py-8 px-4">
+        {isBlankDocument ? (
+          <NewDocumentForm
+            onCreateDocument={async (width, height) => {
+              toast.info("Creating document...");
+              const result = await createAndSaveBlankDocument(width, height, "Untitled.pdf");
+              if (result.success && result.documentId) {
+                toast.success("Document created!");
+                // Navigate to the new document
+                navigate(`/editor?id=${result.documentId}`, { replace: true });
+              } else {
+                toast.error(result.error || "Failed to create document");
+              }
+            }}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center text-gray-400">
+            <FileText className="w-12 h-12 mb-4 opacity-50" />
+            <p>No content to display</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -920,18 +951,25 @@ const EditorPage = () => {
             >
               <div className="m-auto min-w-fit w-full flex flex-col items-center">
                 {viewMode === 'preview' ? (
-                  <PDFViewer
-                    url={pdfUrl}
-                    scale={zoom}
-                    currentPage={currentPage}
-                    onPageChange={setCurrentPage}
-                    totalPages={totalPages}
-                    onDocumentLoad={handleDocumentLoad}
-                    rotation={rotation}
-                    fitToWidth={zoomMode === 'fit-width'}
-                    containerWidth={Math.max(0, availableWidth - 52)}
-                    onZoomChange={setZoom}
-                  />
+                  pdfUrl ? (
+                    <PDFViewer
+                      url={pdfUrl}
+                      scale={zoom}
+                      currentPage={currentPage}
+                      onPageChange={setCurrentPage}
+                      totalPages={totalPages}
+                      onDocumentLoad={handleDocumentLoad}
+                      rotation={rotation}
+                      fitToWidth={zoomMode === 'fit-width'}
+                      containerWidth={Math.max(0, availableWidth - 52)}
+                      onZoomChange={setZoom}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-[60vh] text-center px-8">
+                      <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4" />
+                      <p className="text-gray-500">Loading preview...</p>
+                    </div>
+                  )
                 ) : (
                   <>
 

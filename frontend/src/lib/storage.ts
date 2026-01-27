@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { storageApi } from "@/api/services/storage.api";
+import { PDFDocument } from "pdf-lib";
 
 export interface UploadOptions {
   bucket?: string;
@@ -259,3 +260,58 @@ export const downloadFile = async (
   }
 };
 
+/**
+ * Create a blank PDF with specified dimensions
+ * @param width - Page width in PDF points
+ * @param height - Page height in PDF points
+ * @returns Blob of the blank PDF
+ */
+export const createBlankPDF = async (width: number, height: number): Promise<Blob> => {
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.addPage([width, height]);
+  const pdfBytes = await pdfDoc.save();
+  // Convert Uint8Array to ArrayBuffer for Blob constructor compatibility
+  return new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+};
+
+/**
+ * Create a blank document, upload to cloud, and save metadata
+ * @param width - Page width in PDF points
+ * @param height - Page height in PDF points
+ * @param fileName - Optional filename (defaults to "Untitled.pdf")
+ * @returns Document ID if successful
+ */
+export const createAndSaveBlankDocument = async (
+  width: number,
+  height: number,
+  fileName: string = "Untitled.pdf"
+): Promise<{ success: boolean; documentId?: string; error?: string }> => {
+  try {
+    // Create blank PDF
+    const pdfBlob = await createBlankPDF(width, height);
+    const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // Upload to storage
+    const uploadResult = await uploadFileToStorage(file);
+    if (!uploadResult.success || !uploadResult.path) {
+      return { success: false, error: uploadResult.error || "Upload failed" };
+    }
+
+    // Save metadata
+    const metadataResult = await saveFileMetadata({
+      name: fileName,
+      size: file.size,
+      type: 'application/pdf',
+      storage_path: uploadResult.path,
+    });
+
+    if (!metadataResult.success) {
+      return { success: false, error: metadataResult.error || "Failed to save metadata" };
+    }
+
+    return { success: true, documentId: metadataResult.documentId };
+  } catch (error: any) {
+    console.error("Create blank document error:", error);
+    return { success: false, error: error.message || "Failed to create document" };
+  }
+};
