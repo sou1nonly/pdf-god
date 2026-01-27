@@ -344,16 +344,10 @@ export const FileUploadZone = ({
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt'],
       'application/rtf': ['.rtf'],
-      'application/vnd.oasis.opendocument.text': ['.odt'],
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
-      'image/gif': ['.gif'],
-      'image/bmp': ['.bmp'],
-      'image/tiff': ['.tiff'],
       'image/webp': ['.webp'],
     },
     maxSize: maxSizeBytes,
@@ -391,13 +385,13 @@ export const FileUploadZone = ({
                 ? 'Drop your files here'
                 : isDisabled
                   ? `Maximum ${maxFiles} files reached`
-                  : 'Drop your PDF, image, or document files or click to browse'
+                  : 'Drop your PDF or image files or click to browse'
               }
             </p>
             <p className="text-sm text-muted-foreground">
               {isDisabled
                 ? 'Remove files to upload more'
-                : `PDF, DOC, DOCX, TXT, RTF, ODT, JPG, PNG and more • Up to ${maxFiles} files, ${maxSizeMB}MB each`
+                : `PDF, JPG, PNG, TXT • Up to ${maxFiles} files, ${maxSizeMB}MB each`
               }
             </p>
           </div>

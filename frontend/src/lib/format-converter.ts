@@ -28,26 +28,20 @@ export const detectFileType = (file: File): {
   const supportedTypes: Record<string, { canConvert: boolean; description: string }> = {
     // Direct support (no conversion needed)
     pdf: { canConvert: false, description: 'PDF Document' },
-    
+
     // Document formats (can convert)
-    doc: { canConvert: true, description: 'Microsoft Word Document' },
-    docx: { canConvert: true, description: 'Microsoft Word Document' },
     txt: { canConvert: true, description: 'Text Document' },
     rtf: { canConvert: true, description: 'Rich Text Format' },
-    odt: { canConvert: true, description: 'OpenDocument Text' },
-    
+
     // Image formats (can convert)
     jpg: { canConvert: true, description: 'JPEG Image' },
     jpeg: { canConvert: true, description: 'JPEG Image' },
     png: { canConvert: true, description: 'PNG Image' },
-    gif: { canConvert: true, description: 'GIF Image' },
-    bmp: { canConvert: true, description: 'Bitmap Image' },
-    tiff: { canConvert: true, description: 'TIFF Image' },
     webp: { canConvert: true, description: 'WebP Image' },
   };
 
   const typeInfo = supportedTypes[extension];
-  
+
   return {
     type: extension,
     isSupported: !!typeInfo,
@@ -96,23 +90,38 @@ const convertImageToPDF = async (
     const imgWidth = img.width;
     const imgHeight = img.height;
     const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
-    
+
     const finalWidth = imgWidth * ratio;
     const finalHeight = imgHeight * ratio;
-    
+
     // Center the image on the page
     const x = (pageWidth - finalWidth) / 2;
     const y = (pageHeight - finalHeight) / 2;
 
     onProgress?.(70);
 
-    // Add image to PDF
-    const imageFormat = file.type.split('/')[1].toUpperCase();
-    console.log('Adding image to PDF - Format:', imageFormat, 'Dimensions:', finalWidth, 'x', finalHeight);
-    
+    // Convert image to PNG data URL via canvas
+    // This ensures compatibility with all image formats (GIF, BMP, TIFF, etc.)
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('Failed to create canvas context');
+    }
+
+    ctx.drawImage(img, 0, 0);
+
+    // Convert to PNG data URL (universally supported by jsPDF)
+    const qualityValue = quality === 'high' ? 1.0 : quality === 'medium' ? 0.8 : 0.6;
+    const imageDataUrl = canvas.toDataURL('image/png', qualityValue);
+
+    console.log('Adding image to PDF - Converted to PNG, Dimensions:', finalWidth.toFixed(2), 'x', finalHeight.toFixed(2));
+
     pdf.addImage(
-      imageUrl,
-      imageFormat === 'JPG' ? 'JPEG' : imageFormat,
+      imageDataUrl,
+      'PNG',
       x,
       y,
       finalWidth,
@@ -145,6 +154,7 @@ const convertImageToPDF = async (
   }
 };
 
+
 /**
  * Convert text document to PDF
  */
@@ -171,29 +181,29 @@ const convertTextToPDF = async (
 
     // Set font
     pdf.setFontSize(12);
-    
+
     // Split text into lines that fit the page width
     const pageWidth = pdf.internal.pageSize.getWidth();
     const margin = 20;
     const maxLineWidth = pageWidth - (margin * 2);
-    
+
     const lines = pdf.splitTextToSize(text, maxLineWidth);
-    
+
     // Add text to PDF with pagination
     const lineHeight = 7;
     const pageHeight = pdf.internal.pageSize.getHeight();
     const maxLinesPerPage = Math.floor((pageHeight - (margin * 2)) / lineHeight);
-    
+
     let currentPage = 0;
     for (let i = 0; i < lines.length; i++) {
       const lineIndex = i % maxLinesPerPage;
-      
+
       // Add new page if needed
       if (i > 0 && lineIndex === 0) {
         pdf.addPage();
         currentPage++;
       }
-      
+
       // Add line to page
       pdf.text(lines[i], margin, margin + (lineIndex * lineHeight));
     }
@@ -249,7 +259,7 @@ export const convertToPDF = async (
   let result: ConversionResult;
 
   // Route to appropriate converter
-  const imageFormats = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'];
+  const imageFormats = ['jpg', 'jpeg', 'png', 'webp'];
   const textFormats = ['txt', 'rtf'];
 
   if (imageFormats.includes(fileInfo.type)) {
@@ -283,7 +293,7 @@ export const convertAndCreatePDF = async (
   options: ConversionOptions = {}
 ): Promise<File | null> => {
   console.log('Converting file:', file.name, 'Type:', file.type);
-  
+
   const result = await convertToPDF(file, options);
 
   if (!result.success || !result.blob) {
@@ -317,17 +327,11 @@ export const needsConversion = (file: File): boolean => {
 export const getSupportedExtensions = (): string[] => {
   return [
     '.pdf',
-    '.doc',
-    '.docx',
     '.txt',
     '.rtf',
-    '.odt',
     '.jpg',
     '.jpeg',
     '.png',
-    '.gif',
-    '.bmp',
-    '.tiff',
     '.webp',
   ];
 };
@@ -337,20 +341,14 @@ export const getSupportedExtensions = (): string[] => {
  */
 export const getFileTypeDescription = (file: File): string => {
   const extension = file.name.split('.').pop()?.toLowerCase() || '';
-  
+
   const descriptions: Record<string, string> = {
     pdf: 'PDF Document',
-    doc: 'Microsoft Word Document',
-    docx: 'Microsoft Word Document',
     txt: 'Text Document',
     rtf: 'Rich Text Format',
-    odt: 'OpenDocument Text',
     jpg: 'JPEG Image',
     jpeg: 'JPEG Image',
     png: 'PNG Image',
-    gif: 'GIF Image',
-    bmp: 'Bitmap Image',
-    tiff: 'TIFF Image',
     webp: 'WebP Image',
   };
 
