@@ -30,6 +30,8 @@ interface RightSidebarProps {
   currentPageText?: string; // Text from current page only
   documentId?: string; // Required for RAG
   pageCount?: number; // Total pages for indexing
+  isIndexing?: boolean; // From parent - indexing in progress
+  isIndexed?: boolean; // From parent - document is indexed
 }
 
 export const RightSidebar = ({
@@ -39,6 +41,8 @@ export const RightSidebar = ({
   currentPageText = '',
   documentId,
   pageCount = 1,
+  isIndexing = false,
+  isIndexed = false,
 }: RightSidebarProps) => {
   // Tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'summary' | 'rewrite'>('chat');
@@ -71,9 +75,7 @@ export const RightSidebar = ({
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [questionsGenerated, setQuestionsGenerated] = useState(false);
 
-  // RAG state
-  const [ragStatus, setRagStatus] = useState<'checking' | 'not-indexed' | 'indexed' | 'indexing'>('checking');
-  const [indexProgress, setIndexProgress] = useState('');
+  // RAG sources display
   const [lastSources, setLastSources] = useState<RAGSource[]>([]);
   const [showSources, setShowSources] = useState(false);
 
@@ -114,54 +116,9 @@ export const RightSidebar = ({
     }
   }, [documentText, generateQuestions, questionsGenerated, suggestedQuestions.length]);
 
-  // Check RAG indexing status
-  useEffect(() => {
-    if (documentId) {
-      setRagStatus('checking');
-      getIndexingStatus(documentId)
-        .then(status => {
-          setRagStatus(status.isIndexed ? 'indexed' : 'not-indexed');
-        })
-        .catch(() => setRagStatus('not-indexed'));
-    } else {
-      setRagStatus('not-indexed');
-    }
-  }, [documentId]);
-
-  // Handle indexing document for RAG
-  const handleIndexDocument = async () => {
-    if (!documentId || !documentText) {
-      toast.error('No document to index');
-      return;
-    }
-
-    setRagStatus('indexing');
-    setIndexProgress('Starting...');
-
-    try {
-      const result = await indexDocument(
-        documentId,
-        documentText,
-        pageCount,
-        (status) => setIndexProgress(status)
-      );
-
-      if (result.success) {
-        setRagStatus('indexed');
-        toast.success(`Document indexed! ${result.chunksCreated} chunks created.`);
-      } else {
-        setRagStatus('not-indexed');
-        toast.error(result.error || 'Indexing failed');
-      }
-    } catch (err: any) {
-      setRagStatus('not-indexed');
-      toast.error(err.message || 'Indexing failed');
-    }
-  };
-
   // ========== Chat ==========
   const [ragLoading, setRagLoading] = useState(false);
-  const isChatLoading = chatLoading || ragLoading;
+  const isChatLoading = ragLoading;
 
   const handleSendMessage = async () => {
     if (!chatInput.trim() || isChatLoading) return;
@@ -173,49 +130,38 @@ export const RightSidebar = ({
     const newMessages: ChatMessage[] = [...messages, { role: 'user', content: userMessage }];
     setMessages(newMessages);
 
-    // Use RAG if document is indexed
-    if (ragStatus === 'indexed' && documentId) {
-      setRagLoading(true);
-      try {
-        const result = await queryDocument(documentId, userMessage, messages);
-        setMessages(prev => [...prev, { role: 'assistant', content: result.answer }]);
-        if (result.sources && result.sources.length > 0) {
-          setLastSources(result.sources);
-        }
-      } catch (err: any) {
+    // Check if document is indexed
+    if (!isIndexed || !documentId) {
+      if (isIndexing) {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: 'Sorry, I encountered an error: ' + err.message
+          content: 'Please wait, the document is still being indexed for AI search...'
         }]);
-      } finally {
-        setRagLoading(false);
+      } else {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'This document hasn\'t been indexed yet. Please reload or try again in a moment.'
+        }]);
       }
       return;
     }
 
-    // Fallback: Use regular chat API
-    const contextText = currentPageText || truncateToTokens(documentText, MAX_TOKENS_FOR_CHAT);
-
-    if (!contextText) {
-      toast.error('No document loaded');
-      setMessages(prev => prev.slice(0, -1)); // Remove the user message we just added
-      return;
-    }
-
-    chat(
-      { message: userMessage, documentText: contextText, history: messages },
-      {
-        onSuccess: (data) => {
-          setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-        },
-        onError: (error) => {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: 'Sorry, I encountered an error: ' + error.message
-          }]);
-        }
+    // Use RAG
+    setRagLoading(true);
+    try {
+      const result = await queryDocument(documentId, userMessage, messages);
+      setMessages(prev => [...prev, { role: 'assistant', content: result.answer }]);
+      if (result.sources && result.sources.length > 0) {
+        setLastSources(result.sources);
       }
-    );
+    } catch (err: any) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error: ' + err.message
+      }]);
+    } finally {
+      setRagLoading(false);
+    }
   };
 
   const handleSuggestedQuestion = (question: string) => {
@@ -384,31 +330,22 @@ export const RightSidebar = ({
             {/* RAG Status Banner */}
             {documentId && (
               <div className="px-3 py-2 border-b bg-muted/30">
-                {ragStatus === 'checking' && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Checking index status...</span>
-                  </div>
-                )}
-                {ragStatus === 'indexed' && (
-                  <div className="flex items-center gap-2 text-xs text-green-600">
-                    <Database className="h-3 w-3" />
-                    <span>Smart Search enabled</span>
-                  </div>
-                )}
-                {ragStatus === 'not-indexed' && (
-                  <button
-                    onClick={handleIndexDocument}
-                    className="flex items-center gap-2 text-xs text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <Database className="h-3 w-3" />
-                    <span>Enable Smart Search (one-time)</span>
-                  </button>
-                )}
-                {ragStatus === 'indexing' && (
+                {isIndexing && (
                   <div className="flex items-center gap-2 text-xs text-amber-600">
                     <RefreshCw className="h-3 w-3 animate-spin" />
-                    <span>{indexProgress || 'Indexing...'}</span>
+                    <span>Indexing document for AI...</span>
+                  </div>
+                )}
+                {isIndexed && !isIndexing && (
+                  <div className="flex items-center gap-2 text-xs text-green-600">
+                    <Database className="h-3 w-3" />
+                    <span>Smart Search ready</span>
+                  </div>
+                )}
+                {!isIndexed && !isIndexing && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Database className="h-3 w-3" />
+                    <span>Loading document...</span>
                   </div>
                 )}
               </div>

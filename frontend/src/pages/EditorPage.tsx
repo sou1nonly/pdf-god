@@ -21,6 +21,7 @@ import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
 import { extractTextFromPages } from "@/lib/ai/text-extraction";
 import { saveAnnotations, loadAnnotations } from "@/lib/annotations-service";
+import { indexDocument, getIndexingStatus } from "@/lib/ai/rag-client";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -64,6 +65,10 @@ const EditorPage = () => {
   const [pageAnnotations, setPageAnnotations] = useState<Map<number, any[]>>(new Map());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // RAG indexing state
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [isIndexed, setIsIndexed] = useState(false);
 
   // Undo/Redo state for canvas - managed per-canvas via window.__drawingCanvas
   const [canUndo, setCanUndo] = useState(false);
@@ -521,6 +526,45 @@ const EditorPage = () => {
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     };
   }, [documentId]); // Removed processFile from deps to avoid loops if it's not stable
+
+  // Auto-index document for RAG after hydration completes
+  useEffect(() => {
+    const autoIndex = async () => {
+      // Skip if no document ID, no text, already indexed, or currently indexing
+      if (!documentId || !documentText || isIndexed || isIndexing) {
+        return;
+      }
+
+      // Check if already indexed in database
+      try {
+        const status = await getIndexingStatus(documentId);
+        if (status.isIndexed && status.chunksCount > 0) {
+          setIsIndexed(true);
+          return;
+        }
+      } catch {
+        // If status check fails, try to index anyway
+      }
+
+      // Start indexing
+      setIsIndexing(true);
+      try {
+        const result = await indexDocument(documentId, documentText, totalPages);
+        if (result.success) {
+          setIsIndexed(true);
+          console.log(`RAG: Indexed ${result.chunksCreated} chunks`);
+        } else {
+          console.error('RAG indexing failed:', result.error);
+        }
+      } catch (err) {
+        console.error('RAG indexing error:', err);
+      } finally {
+        setIsIndexing(false);
+      }
+    };
+
+    autoIndex();
+  }, [documentId, documentText, totalPages, isIndexed, isIndexing]);
 
   // Auto-collapse sidebars on mobile
   useEffect(() => {
@@ -1007,6 +1051,8 @@ const EditorPage = () => {
             currentPageText={currentPageText}
             documentId={documentId || undefined}
             pageCount={totalPages}
+            isIndexing={isIndexing}
+            isIndexed={isIndexed}
           />
         </div>
       </div>
@@ -1103,6 +1149,8 @@ const EditorPage = () => {
           currentPageText={currentPageText}
           documentId={documentId || undefined}
           pageCount={totalPages}
+          isIndexing={isIndexing}
+          isIndexed={isIndexed}
         />
       </MobileDrawer>
     </div>
