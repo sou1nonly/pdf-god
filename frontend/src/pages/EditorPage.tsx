@@ -1005,6 +1005,8 @@ const EditorPage = () => {
             onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
             documentText={documentText}
             currentPageText={currentPageText}
+            documentId={documentId || undefined}
+            pageCount={totalPages}
           />
         </div>
       </div>
@@ -1099,6 +1101,8 @@ const EditorPage = () => {
           onToggle={() => setMobileRightOpen(false)}
           documentText={documentText}
           currentPageText={currentPageText}
+          documentId={documentId || undefined}
+          pageCount={totalPages}
         />
       </MobileDrawer>
     </div>

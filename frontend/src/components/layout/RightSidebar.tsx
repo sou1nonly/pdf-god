@@ -1,4 +1,4 @@
-import { ChevronRight, Bot, FileText, Wand2, Loader2, Send, Copy, Check, Sparkles } from "lucide-react";
+import { ChevronRight, Bot, FileText, Wand2, Loader2, Send, Copy, Check, Sparkles, Database, RefreshCw, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAIChat, useAISummarize, useAIRewrite, useAIQuestions } from "@/hooks/api";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@/types";
+import { getIndexingStatus, indexDocument, queryDocument, type RAGSource } from "@/lib/ai/rag-client";
 
 // Approximate tokens by characters (1 token ≈ 4 chars for English)
 const MAX_TOKENS_FOR_QUESTIONS = 2000; // ~8000 chars
@@ -27,6 +28,8 @@ interface RightSidebarProps {
   onToggle: () => void;
   documentText?: string;
   currentPageText?: string; // Text from current page only
+  documentId?: string; // Required for RAG
+  pageCount?: number; // Total pages for indexing
 }
 
 export const RightSidebar = ({
@@ -34,6 +37,8 @@ export const RightSidebar = ({
   onToggle,
   documentText = '',
   currentPageText = '',
+  documentId,
+  pageCount = 1,
 }: RightSidebarProps) => {
   // Tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'summary' | 'rewrite'>('chat');
@@ -65,6 +70,12 @@ export const RightSidebar = ({
   // Suggested questions
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [questionsGenerated, setQuestionsGenerated] = useState(false);
+
+  // RAG state
+  const [ragStatus, setRagStatus] = useState<'checking' | 'not-indexed' | 'indexed' | 'indexing'>('checking');
+  const [indexProgress, setIndexProgress] = useState('');
+  const [lastSources, setLastSources] = useState<RAGSource[]>([]);
+  const [showSources, setShowSources] = useState(false);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -103,23 +114,93 @@ export const RightSidebar = ({
     }
   }, [documentText, generateQuestions, questionsGenerated, suggestedQuestions.length]);
 
-  // ========== Chat ==========
-  const handleSendMessage = () => {
-    if (!chatInput.trim() || chatLoading) return;
+  // Check RAG indexing status
+  useEffect(() => {
+    if (documentId) {
+      setRagStatus('checking');
+      getIndexingStatus(documentId)
+        .then(status => {
+          setRagStatus(status.isIndexed ? 'indexed' : 'not-indexed');
+        })
+        .catch(() => setRagStatus('not-indexed'));
+    } else {
+      setRagStatus('not-indexed');
+    }
+  }, [documentId]);
 
-    // Use current page text if available, otherwise fallback to truncated full doc
+  // Handle indexing document for RAG
+  const handleIndexDocument = async () => {
+    if (!documentId || !documentText) {
+      toast.error('No document to index');
+      return;
+    }
+
+    setRagStatus('indexing');
+    setIndexProgress('Starting...');
+
+    try {
+      const result = await indexDocument(
+        documentId,
+        documentText,
+        pageCount,
+        (status) => setIndexProgress(status)
+      );
+
+      if (result.success) {
+        setRagStatus('indexed');
+        toast.success(`Document indexed! ${result.chunksCreated} chunks created.`);
+      } else {
+        setRagStatus('not-indexed');
+        toast.error(result.error || 'Indexing failed');
+      }
+    } catch (err: any) {
+      setRagStatus('not-indexed');
+      toast.error(err.message || 'Indexing failed');
+    }
+  };
+
+  // ========== Chat ==========
+  const [ragLoading, setRagLoading] = useState(false);
+  const isChatLoading = chatLoading || ragLoading;
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || isChatLoading) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput("");
+    setLastSources([]);
+
+    const newMessages: ChatMessage[] = [...messages, { role: 'user', content: userMessage }];
+    setMessages(newMessages);
+
+    // Use RAG if document is indexed
+    if (ragStatus === 'indexed' && documentId) {
+      setRagLoading(true);
+      try {
+        const result = await queryDocument(documentId, userMessage, messages);
+        setMessages(prev => [...prev, { role: 'assistant', content: result.answer }]);
+        if (result.sources && result.sources.length > 0) {
+          setLastSources(result.sources);
+        }
+      } catch (err: any) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error: ' + err.message
+        }]);
+      } finally {
+        setRagLoading(false);
+      }
+      return;
+    }
+
+    // Fallback: Use regular chat API
     const contextText = currentPageText || truncateToTokens(documentText, MAX_TOKENS_FOR_CHAT);
 
     if (!contextText) {
       toast.error('No document loaded');
+      setMessages(prev => prev.slice(0, -1)); // Remove the user message we just added
       return;
     }
-
-    const userMessage = chatInput.trim();
-    setChatInput("");
-
-    const newMessages: ChatMessage[] = [...messages, { role: 'user', content: userMessage }];
-    setMessages(newMessages);
 
     chat(
       { message: userMessage, documentText: contextText, history: messages },
@@ -300,6 +381,39 @@ export const RightSidebar = ({
         {/* Chat Tab */}
         {activeTab === 'chat' && (
           <div className={cn("flex-1 flex flex-col", isGuest && "opacity-20 pointer-events-none select-none")}>
+            {/* RAG Status Banner */}
+            {documentId && (
+              <div className="px-3 py-2 border-b bg-muted/30">
+                {ragStatus === 'checking' && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Checking index status...</span>
+                  </div>
+                )}
+                {ragStatus === 'indexed' && (
+                  <div className="flex items-center gap-2 text-xs text-green-600">
+                    <Database className="h-3 w-3" />
+                    <span>Smart Search enabled</span>
+                  </div>
+                )}
+                {ragStatus === 'not-indexed' && (
+                  <button
+                    onClick={handleIndexDocument}
+                    className="flex items-center gap-2 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <Database className="h-3 w-3" />
+                    <span>Enable Smart Search (one-time)</span>
+                  </button>
+                )}
+                {ragStatus === 'indexing' && (
+                  <div className="flex items-center gap-2 text-xs text-amber-600">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    <span>{indexProgress || 'Indexing...'}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-auto p-3 space-y-3">
               {messages.length === 0 ? (
@@ -351,14 +465,45 @@ export const RightSidebar = ({
                   </div>
                 ))
               )}
-              {chatLoading && (
+              {isChatLoading && (
                 <div className="flex justify-start">
                   <div className="bg-muted rounded-lg px-3 py-2 flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Thinking...</span>
+                    <span className="text-sm">{ragStatus === 'indexed' ? 'Searching...' : 'Thinking...'}</span>
                   </div>
                 </div>
               )}
+
+              {/* Sources Section */}
+              {lastSources.length > 0 && (
+                <div className="border rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setShowSources(!showSources)}
+                    className="w-full px-3 py-2 bg-muted/50 flex items-center justify-between text-xs font-medium hover:bg-muted transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="h-3 w-3" />
+                      {lastSources.length} source{lastSources.length > 1 ? 's' : ''} found
+                    </span>
+                    <ChevronRight className={cn("h-3 w-3 transition-transform", showSources && "rotate-90")} />
+                  </button>
+                  {showSources && (
+                    <div className="divide-y">
+                      {lastSources.map((source, i) => (
+                        <div key={source.id} className="p-2 text-xs">
+                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                            <span className="font-medium">Source {i + 1}</span>
+                            {source.pageNumber && <span>• Page {source.pageNumber}</span>}
+                            <span>• {Math.round(source.similarity * 100)}% match</span>
+                          </div>
+                          <p className="text-foreground/80 line-clamp-3">{source.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div ref={chatEndRef} />
             </div>
 
@@ -366,7 +511,7 @@ export const RightSidebar = ({
             <div className="border-t p-3">
               <div className="flex gap-2">
                 <Input
-                  placeholder="Ask about this PDF..."
+                  placeholder={ragStatus === 'indexed' ? "Ask with Smart Search..." : "Ask about this PDF..."}
                   className="flex-1 text-sm"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
@@ -376,9 +521,9 @@ export const RightSidebar = ({
                       handleSendMessage();
                     }
                   }}
-                  disabled={chatLoading}
+                  disabled={isChatLoading}
                 />
-                <Button size="sm" onClick={handleSendMessage} disabled={chatLoading || !chatInput.trim()}>
+                <Button size="sm" onClick={handleSendMessage} disabled={isChatLoading || !chatInput.trim()}>
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
