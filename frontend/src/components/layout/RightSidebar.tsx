@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAIChat, useAISummarize, useAIRewrite, useAIQuestions } from "@/hooks/api";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ChatMessage, AISummaryLength, AIRewriteTone } from "@/types";
-import { getIndexingStatus, indexDocument, queryDocument, type RAGSource } from "@/lib/ai/rag-client";
+import { queryDocument, type RAGSource } from "@/lib/ai/rag-client";
 
 // Approximate tokens by characters (1 token ≈ 4 chars for English)
 const MAX_TOKENS_FOR_QUESTIONS = 2000; // ~8000 chars
@@ -40,7 +40,6 @@ export const RightSidebar = ({
   documentText = '',
   currentPageText = '',
   documentId,
-  pageCount = 1,
   isIndexing = false,
   isIndexed = false,
 }: RightSidebarProps) => {
@@ -149,7 +148,7 @@ export const RightSidebar = ({
     // Use RAG
     setRagLoading(true);
     try {
-      const result = await queryDocument(documentId, userMessage, messages);
+      const result = await queryDocument(documentId, userMessage);
       setMessages(prev => [...prev, { role: 'assistant', content: result.answer }]);
       if (result.sources && result.sources.length > 0) {
         setLastSources(result.sources);
@@ -406,7 +405,7 @@ export const RightSidebar = ({
                 <div className="flex justify-start">
                   <div className="bg-muted rounded-lg px-3 py-2 flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">{ragStatus === 'indexed' ? 'Searching...' : 'Thinking...'}</span>
+                    <span className="text-sm">{isIndexed ? 'Searching...' : 'Thinking...'}</span>
                   </div>
                 </div>
               )}
@@ -448,7 +447,7 @@ export const RightSidebar = ({
             <div className="border-t p-3">
               <div className="flex gap-2">
                 <Input
-                  placeholder={ragStatus === 'indexed' ? "Ask with Smart Search..." : "Ask about this PDF..."}
+                  placeholder={isIndexed ? "Ask with Smart Search..." : "Ask about this PDF..."}
                   className="flex-1 text-sm"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}

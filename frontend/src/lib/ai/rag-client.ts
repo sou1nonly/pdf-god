@@ -1,67 +1,70 @@
 /**
- * RAG Client Service
- * Frontend service to interact with RAG API endpoints
+ * RAG Client - Simplified
+ * 3 functions: indexDocument, queryDocument, getStatus
  */
+
+import { supabase } from "@/integrations/supabase/client";
+
+const API_BASE = '/api/rag';
 
 // ============================================
 // Types
 // ============================================
 
+export interface RAGStatus {
+    isIndexed: boolean;
+    chunksCount: number;
+    indexedAt: string | null;
+}
+
 export interface RAGSource {
-    id: string;
+    id: Key;
     content: string;
     pageNumber: number | null;
-    similarity: number;
-    chunkIndex: number;
+    similarity?: number;
 }
 
 export interface RAGResponse {
     answer: string;
     sources: RAGSource[];
-    tokensUsed: number;
     ragUsed: boolean;
 }
 
-export interface IndexingStatus {
-    isIndexed: boolean;
-    indexedAt: string | null;
-    chunksCount: number;
-}
-
-export interface IndexingResult {
+export interface IndexResult {
     success: boolean;
     chunksCreated?: number;
     error?: string;
 }
 
-export interface ChatMessage {
-    role: 'user' | 'assistant';
-    content: string;
-}
-
 // ============================================
-// API Base
+// Helper
 // ============================================
 
-const API_BASE = '/api/rag';
+async function apiRequest<T>(action: string, options: RequestInit = {}): Promise<T> {
+    // Get auth token
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-async function apiRequest<T>(
-    endpoint: string,
-    options: RequestInit = {}
-): Promise<T> {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        credentials: 'include', // Include cookies for Supabase auth
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        },
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(options.headers as Record<string, string>)
+    };
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const url = `${API_BASE}?action=${action}`;
+
+    const response = await fetch(url, {
+        headers,
         ...options
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(data.error?.message || 'API request failed');
+        throw new Error(data.error?.message || `API error: ${response.status}`);
     }
 
     return data.data || data;
@@ -72,33 +75,24 @@ async function apiRequest<T>(
 // ============================================
 
 /**
- * Get the indexing status of a document
+ * Check if a document is indexed
  */
-export async function getIndexingStatus(documentId: string): Promise<IndexingStatus> {
-    return apiRequest<IndexingStatus>(`/status?documentId=${documentId}`, {
+export async function getIndexingStatus(documentId: string): Promise<RAGStatus> {
+    return apiRequest<RAGStatus>(`status&documentId=${documentId}`, {
         method: 'GET'
     });
 }
 
 /**
  * Index a document for RAG
- * @param documentId - The document ID
- * @param documentText - Full text content of the document
- * @param pageCount - Total number of pages
- * @param onProgress - Optional progress callback
  */
 export async function indexDocument(
     documentId: string,
     documentText: string,
-    pageCount: number = 1,
-    onProgress?: (status: string) => void
-): Promise<IndexingResult> {
-    onProgress?.('Preparing document...');
-
+    pageCount: number = 1
+): Promise<IndexResult> {
     try {
-        onProgress?.('Generating embeddings...');
-
-        const result = await apiRequest<{ message: string; chunksCreated: number }>('/index', {
+        const result = await apiRequest<{ message: string; chunksCreated: number }>('index', {
             method: 'POST',
             body: JSON.stringify({
                 documentId,
@@ -106,8 +100,6 @@ export async function indexDocument(
                 pageCount
             })
         });
-
-        onProgress?.('Indexing complete!');
 
         return {
             success: true,
@@ -123,40 +115,22 @@ export async function indexDocument(
 
 /**
  * Query a document using RAG
- * @param documentId - The document ID
- * @param query - The user's question
- * @param history - Conversation history
  */
 export async function queryDocument(
     documentId: string,
-    query: string,
-    history: ChatMessage[] = []
+    query: string
 ): Promise<RAGResponse> {
-    return apiRequest<RAGResponse>('/query', {
+    return apiRequest<RAGResponse>('query', {
         method: 'POST',
         body: JSON.stringify({
             documentId,
-            query,
-            history: history.map(m => ({
-                role: m.role,
-                content: m.content
-            }))
+            query
         })
     });
 }
 
 /**
- * Clear the index for a document
- */
-export async function clearIndex(documentId: string): Promise<void> {
-    await apiRequest('/clear', {
-        method: 'POST',
-        body: JSON.stringify({ documentId })
-    });
-}
-
-/**
- * Check if a document is ready for RAG queries
+ * Check if document is ready for RAG queries
  */
 export async function isDocumentIndexed(documentId: string): Promise<boolean> {
     try {

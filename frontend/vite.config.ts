@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       // Proxy API calls to deployed Vercel backend
       '/api': {
-        target: 'https://pdf-god.vercel.app',
+        target: 'https://lamina-v1.vercel.app',
         changeOrigin: true,
         secure: true,
       }

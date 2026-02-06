@@ -19,7 +19,7 @@ import { LayersPanel } from "@/components/editor/canvas/LayersPanel";
 import { Layer } from "@/components/editor/types";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
-import { extractTextFromPages } from "@/lib/ai/text-extraction";
+import { extractTextFromPages } from "@/lib/rag/extract-text";
 import { saveAnnotations, loadAnnotations } from "@/lib/annotations-service";
 import { indexDocument, getIndexingStatus } from "@/lib/ai/rag-client";
 import { Button } from "@/components/ui/button";
