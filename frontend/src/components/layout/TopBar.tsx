@@ -37,6 +37,9 @@ interface TopBarProps {
   onMobileRightToggle?: () => void;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
+  renderEngine?: 'classic' | 'typst';
+  onRenderEngineChange?: (engine: 'classic' | 'typst') => void;
+  semanticAvailable?: boolean;
 }
 
 export const TopBar = ({
@@ -51,6 +54,9 @@ export const TopBar = ({
   isSaving = false,
   leftSidebarOpen = true,
   rightSidebarOpen = true,
+  renderEngine = 'classic',
+  onRenderEngineChange,
+  semanticAvailable = false,
 }: TopBarProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -164,6 +170,27 @@ export const TopBar = ({
             <div className="flex items-center gap-2 text-xs text-primary bg-primary/10 px-3 py-1.5 rounded-full ml-4 hidden md:flex">
               <div className="animate-spin rounded-full h-3 w-3 border-2 border-primary border-t-transparent"></div>
               <span>Processing... {Math.round(processingProgress || 0)}%</span>
+            </div>
+          )}
+
+          {semanticAvailable && (
+            <div className="flex items-center bg-muted/50 rounded-lg p-1 ml-4 hidden sm:flex">
+              <Button
+                variant={renderEngine === 'classic' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => onRenderEngineChange?.('classic')}
+                className="h-7 text-xs px-3"
+              >
+                Classic
+              </Button>
+              <Button
+                variant={renderEngine === 'typst' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => onRenderEngineChange?.('typst')}
+                className="h-7 text-xs px-3"
+              >
+                Semantic (Beta)
+              </Button>
             </div>
           )}
         </div>

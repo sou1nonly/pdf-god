@@ -27,8 +27,16 @@ export interface SaveAnnotationData {
  * Get all annotations for a document
  */
 export const getAnnotations = async (documentId: string): Promise<Record<number, Annotation>> => {
-    const { annotations } = await api.get<AnnotationsResponse>(`/documents/${documentId}/annotations`);
-    return annotations;
+    try {
+        const { annotations } = await api.get<AnnotationsResponse>(`/documents/${documentId}/annotations`);
+        return annotations;
+    } catch (err: any) {
+        // 404 means no annotations exist yet — not an error
+        if (err?.status === 404 || err?.message?.includes('404')) {
+            return {};
+        }
+        throw err;
+    }
 };
 
 /**

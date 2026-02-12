@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { HydratedPage, ImageBlock } from '@/types/hydration';
+import type { HydratedPage, ImageBlock, HydratedDocument } from '@/types/hydration';
+import type { SemanticDocument } from '@/lib/semantic';
+import { extractSemanticDocument } from '@/lib/semantic';
 import HydrationWorker from '@/workers/hydration.worker?worker';
 
 type Status = 'idle' | 'processing' | 'complete' | 'error';
@@ -33,9 +35,15 @@ export type HydratedPageWithUrl = HydratedPage & {
 export const useHydrationEngine = () => {
   const [status, setStatus] = useState<Status>('idle');
   const [pages, setPages] = useState<HydratedPageWithUrl[] | null>(null);
+  const [semanticDocument, setSemanticDocument] = useState<SemanticDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [stageInfo, setStageInfo] = useState<StageInfo>({ stage: 'idle', message: '' });
+
+  // Feature flag for semantic extraction (can be controlled via localStorage)
+  const useSemanticEngine = typeof window !== 'undefined'
+    ? localStorage.getItem('useSemanticEngine') === 'true'
+    : false;
   const workerRef = useRef<Worker | null>(null);
 
   const processFile = useCallback(async (file: File | Blob) => {
@@ -59,7 +67,8 @@ export const useHydrationEngine = () => {
 
         if (type === 'COMPLETE') {
           // Create Object URLs for background blobs and image blocks
-          const pagesWithUrls = (resultPages as HydratedPage[]).map(page => ({
+          const hydratedPages = resultPages as HydratedPage[];
+          const pagesWithUrls = hydratedPages.map(page => ({
             ...page,
             backgroundUrl: page.backgroundBlob ? URL.createObjectURL(page.backgroundBlob) : undefined,
             blocks: page.blocks.map(block => {
@@ -74,6 +83,27 @@ export const useHydrationEngine = () => {
           }));
 
           setPages(pagesWithUrls);
+
+          // Run semantic extraction if enabled
+          if (useSemanticEngine) {
+            try {
+              const hydratedDoc: HydratedDocument = {
+                pages: hydratedPages,
+                source: {
+                  pageCount: hydratedPages.length,
+                  createdAt: Date.now(),
+                },
+              };
+              const semantic = extractSemanticDocument(hydratedDoc);
+              setSemanticDocument(semantic);
+              console.log('[Semantic] Extracted document:', semantic.structure.sections.length, 'sections');
+              console.log('[Semantic] Typst source preview:', semantic.typstSource.slice(0, 500));
+            } catch (err) {
+              console.warn('[Semantic] Extraction failed:', err);
+              // Don't fail the whole process, just log the error
+            }
+          }
+
           setStatus('complete');
           setProgress(100);
           setStageInfo({ stage: 'complete', message: 'Document ready for editing!' });
@@ -104,7 +134,7 @@ export const useHydrationEngine = () => {
       setError(err instanceof Error ? err.message : 'Failed to start processing');
       setStatus('error');
     }
-  }, []);
+  }, [useSemanticEngine]);
 
   const reset = useCallback(() => {
     // Revoke object URLs to avoid memory leaks
@@ -116,6 +146,7 @@ export const useHydrationEngine = () => {
       });
     }
     setPages(null);
+    setSemanticDocument(null);
     setStatus('idle');
     setError(null);
     setProgress(0);
@@ -272,5 +303,5 @@ export const useHydrationEngine = () => {
     setStageInfo({ stage: 'complete', message: 'Blank document created!' });
   }, []);
 
-  return { processFile, pages, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles, addTextBlock, createBlankPage };
+  return { processFile, pages, semanticDocument, status, error, progress, stageInfo, reset, updateBlock, moveBlock, updateBlockStyles, addTextBlock, createBlankPage };
 };

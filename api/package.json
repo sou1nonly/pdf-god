@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "private": true,
     "dependencies": {
+        "@myriaddreamin/typst-ts-node-compiler": "^0.7.0-rc2",
         "@supabase/supabase-js": "^2.78.0",
         "@vercel/node": "^5.0.0"
     }
