@@ -357,7 +357,9 @@ const EditorPage = () => {
   const {
     typstSource: semanticTypstSource,
     sections: semanticSections,
-    updateSection
+    updateSection,
+    addSection,
+    deleteSection,
   } = useSemanticDocument(semanticDocForHook);
 
   // Extract text from pages for AI (memoized) - must be after useHydrationEngine
@@ -1130,6 +1132,8 @@ const EditorPage = () => {
                 structure: { ...initialSemanticDoc.structure, sections: semanticSections }
               } : null}
               onUpdateSection={updateSection}
+              onAddSection={addSection}
+              onDeleteSection={deleteSection}
             />
           </div>
         </div>
@@ -1233,6 +1237,8 @@ const EditorPage = () => {
             structure: { ...initialSemanticDoc.structure, sections: semanticSections }
           } : null}
           onUpdateSection={updateSection}
+          onAddSection={addSection}
+          onDeleteSection={deleteSection}
         />
       </MobileDrawer>
     </div>
