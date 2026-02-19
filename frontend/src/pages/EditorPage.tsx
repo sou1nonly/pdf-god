@@ -20,6 +20,8 @@ import { LayersPanel } from "@/components/editor/canvas/LayersPanel";
 import { Layer } from "@/components/editor/types";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
+import { useSemanticDocument } from "@/hooks/useSemanticDocument";
+import type { SemanticDocument } from "@/lib/semantic/types";
 import { extractTextFromPages } from "@/lib/rag/extract-text";
 import { saveAnnotations, loadAnnotations } from "@/lib/annotations-service";
 import { indexDocument, getIndexingStatus } from "@/lib/ai/rag-client";
@@ -43,6 +45,8 @@ const EditorPage = () => {
   const [fileName, setFileName] = useState("Untitled Document");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const isResizingSidebar = useRef(false);
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<DrawingTool>('select');
@@ -338,7 +342,23 @@ const EditorPage = () => {
     setHasUnsavedChanges(true);
   }, []);
 
-  const { processFile, pages, semanticDocument, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles, addTextBlock, createBlankPage } = useHydrationEngine();
+  const { processFile, pages, semanticDocument: initialSemanticDoc, status, progress, stageInfo, updateBlock, moveBlock, updateBlockStyles, addTextBlock, createBlankPage } = useHydrationEngine();
+
+  // Phase 3: Semantic Editing logic
+  const emptySemanticDoc = useMemo<SemanticDocument>(() => ({
+    typstSource: '',
+    structure: { sections: [], sectionIndex: new Map() },
+    pageInfo: [],
+    metadata: { createdAt: Date.now(), pageCount: 0, typography: { bodyFontSize: 11, headingScale: 1.5, lineHeight: 1.4 } }
+  }), []);
+
+  const semanticDocForHook = initialSemanticDoc || emptySemanticDoc;
+
+  const {
+    typstSource: semanticTypstSource,
+    sections: semanticSections,
+    updateSection
+  } = useSemanticDocument(semanticDocForHook);
 
   // Extract text from pages for AI (memoized) - must be after useHydrationEngine
   const documentText = useMemo(() => {
@@ -849,9 +869,13 @@ const EditorPage = () => {
         <div ref={pageContainerRef} className="flex flex-col items-center gap-4 w-full py-4 px-4 min-w-0">
           {pages.map(page => (
             <div key={page.pageIndex} data-page-canvas data-page-index={page.pageIndex}>
-              {renderEngine === 'typst' && semanticDocument ? (
+              {renderEngine === 'typst' && initialSemanticDoc ? (
                 <TypstPageView
-                  document={semanticDocument}
+                  document={{
+                    ...initialSemanticDoc,
+                    typstSource: semanticTypstSource,
+                    structure: { ...initialSemanticDoc.structure, sections: semanticSections }
+                  }}
                   pageIndex={page.pageIndex}
                   scale={zoom / 100}
                   className="mb-8 shadow-lg"
@@ -949,7 +973,7 @@ const EditorPage = () => {
         rightSidebarOpen={rightSidebarOpen}
         renderEngine={renderEngine}
         onRenderEngineChange={setRenderEngine}
-        semanticAvailable={!!semanticDocument}
+        semanticAvailable={!!initialSemanticDoc}
       />
 
       {/* Body: Sidebars + Content */}
@@ -1051,23 +1075,63 @@ const EditorPage = () => {
           onSave={handleSignatureSave}
         />
 
-        {/* Right Sidebar - Desktop */}
+        {/* Right Sidebar - Desktop (Resizable) */}
         <div
-          className={cn(
-            "hidden lg:block h-full shadow-soft z-20 transition-all duration-300 ease-in-out overflow-hidden",
-            rightSidebarOpen ? "w-80" : "w-14"
-          )}
+          className="hidden lg:flex h-full z-20 overflow-hidden shrink-0"
+          style={{ width: rightSidebarOpen ? sidebarWidth : 56 }}
         >
-          <RightSidebar
-            isOpen={rightSidebarOpen}
-            onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
-            documentText={documentText}
-            currentPageText={currentPageText}
-            documentId={documentId || undefined}
-            pageCount={totalPages}
-            isIndexing={isIndexing}
-            isIndexed={isIndexed}
-          />
+          {/* Drag Handle */}
+          {rightSidebarOpen && (
+            <div
+              className="w-1 hover:w-1.5 cursor-col-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-all shrink-0 relative group"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                isResizingSidebar.current = true;
+                const startX = e.clientX;
+                const startWidth = sidebarWidth;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+
+                const onMouseMove = (ev: MouseEvent) => {
+                  if (!isResizingSidebar.current) return;
+                  const delta = startX - ev.clientX;
+                  const newWidth = Math.min(560, Math.max(280, startWidth + delta));
+                  setSidebarWidth(newWidth);
+                };
+
+                const onMouseUp = () => {
+                  isResizingSidebar.current = false;
+                  document.body.style.cursor = '';
+                  document.body.style.userSelect = '';
+                  document.removeEventListener('mousemove', onMouseMove);
+                  document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+              }}
+            >
+              <div className="absolute inset-y-0 left-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          )}
+
+          {/* Sidebar Content */}
+          <div className="flex-1 overflow-hidden">
+            <RightSidebar
+              isOpen={rightSidebarOpen}
+              onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+              documentText={documentText}
+              documentId={documentId || undefined}
+              isIndexing={isIndexing}
+              isIndexed={isIndexed}
+              semanticDoc={initialSemanticDoc ? {
+                ...initialSemanticDoc,
+                typstSource: semanticTypstSource,
+                structure: { ...initialSemanticDoc.structure, sections: semanticSections }
+              } : null}
+              onUpdateSection={updateSection}
+            />
+          </div>
         </div>
       </div>
 
@@ -1127,7 +1191,7 @@ const EditorPage = () => {
 
           <div
             className="fixed transition-all duration-300 ease-in-out hidden lg:block pointer-events-auto"
-            style={{ top: '8rem', right: rightSidebarOpen ? '22rem' : '6rem' }}
+            style={{ top: '8rem', right: rightSidebarOpen ? `${sidebarWidth + 16}px` : '5rem' }}
           >
             <LayersPanel
               layers={layers}
@@ -1160,11 +1224,15 @@ const EditorPage = () => {
           isOpen={true}
           onToggle={() => setMobileRightOpen(false)}
           documentText={documentText}
-          currentPageText={currentPageText}
           documentId={documentId || undefined}
-          pageCount={totalPages}
           isIndexing={isIndexing}
           isIndexed={isIndexed}
+          semanticDoc={initialSemanticDoc ? {
+            ...initialSemanticDoc,
+            typstSource: semanticTypstSource,
+            structure: { ...initialSemanticDoc.structure, sections: semanticSections }
+          } : null}
+          onUpdateSection={updateSection}
         />
       </MobileDrawer>
     </div>
