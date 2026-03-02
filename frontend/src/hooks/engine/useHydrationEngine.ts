@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { HydratedPage, ImageBlock, HydratedDocument } from '@/types/hydration';
 import type { SemanticDocument } from '@/lib/semantic';
 import { extractSemanticDocument } from '@/lib/semantic';
+import { mergeSemanticIntoHydration } from '@/lib/semantic/semantic-merger';
 import HydrationWorker from '@/workers/hydration.worker?worker';
 
 type Status = 'idle' | 'processing' | 'complete' | 'error';
@@ -40,10 +41,6 @@ export const useHydrationEngine = () => {
   const [progress, setProgress] = useState(0);
   const [stageInfo, setStageInfo] = useState<StageInfo>({ stage: 'idle', message: '' });
 
-  // Feature flag for semantic extraction (can be controlled via localStorage)
-  const useSemanticEngine = typeof window !== 'undefined'
-    ? localStorage.getItem('useSemanticEngine') === 'true'
-    : false;
   const workerRef = useRef<Worker | null>(null);
 
   const processFile = useCallback(async (file: File | Blob) => {
@@ -84,24 +81,30 @@ export const useHydrationEngine = () => {
 
           setPages(pagesWithUrls);
 
-          // Run semantic extraction if enabled
-          if (useSemanticEngine) {
-            try {
-              const hydratedDoc: HydratedDocument = {
-                pages: hydratedPages,
-                source: {
-                  pageCount: hydratedPages.length,
-                  createdAt: Date.now(),
-                },
-              };
-              const semantic = extractSemanticDocument(hydratedDoc);
-              setSemanticDocument(semantic);
-              console.log('[Semantic] Extracted document:', semantic.structure.sections.length, 'sections');
-              console.log('[Semantic] Typst source preview:', semantic.typstSource.slice(0, 500));
-            } catch (err) {
-              console.warn('[Semantic] Extraction failed:', err);
-              // Don't fail the whole process, just log the error
-            }
+          // Always run semantic extraction + merge for improved text quality
+          try {
+            const hydratedDoc: HydratedDocument = {
+              pages: hydratedPages,
+              source: {
+                pageCount: hydratedPages.length,
+                createdAt: Date.now(),
+              },
+            };
+            const semantic = extractSemanticDocument(hydratedDoc);
+            setSemanticDocument(semantic);
+            console.log('[Semantic] Extracted document:', semantic.structure.sections.length, 'sections');
+
+            // Merge semantic text into hydration blocks (with font normalization)
+            const { pages: mergedPages, stats } = mergeSemanticIntoHydration(
+              pagesWithUrls,
+              semantic.structure.sections,
+              semantic.metadata.typography.bodyFontSize
+            );
+            setPages(mergedPages as HydratedPageWithUrl[]);
+            console.log('[Semantic Merger]', stats);
+          } catch (err) {
+            console.warn('[Semantic] Extraction/merge failed, using hydration-only:', err);
+            // Graceful fallback — hydration pages are already set above
           }
 
           setStatus('complete');
@@ -134,7 +137,7 @@ export const useHydrationEngine = () => {
       setError(err instanceof Error ? err.message : 'Failed to start processing');
       setStatus('error');
     }
-  }, [useSemanticEngine]);
+  }, []);
 
   const reset = useCallback(() => {
     // Revoke object URLs to avoid memory leaks

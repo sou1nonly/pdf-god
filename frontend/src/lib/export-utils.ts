@@ -1,5 +1,31 @@
 import { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle, LineJoinStyle } from 'pdf-lib';
 import html2canvas from 'html2canvas';
+
+// Helper to prevent pdf-lib crash on unsupported unicode characters
+function sanitizeForWinAnsi(text: string): string {
+  if (!text) return '';
+  return text
+    // Quotes
+    .replace(/[\u2018\u2019\u201A\u201B\u2039\u203A]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+    // Dashes
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
+    // Arrows
+    .replace(/\u2192/g, "->")
+    .replace(/\u2190/g, "<-")
+    .replace(/\u2191/g, "^")
+    .replace(/\u2193/g, "v")
+    .replace(/\u2194/g, "<->")
+    // Other common symbols
+    .replace(/\u2026/g, "...")
+    .replace(/\u2022/g, "*")
+    .replace(/\u2122/g, "TM")
+    .replace(/\u00A9/g, "(c)")
+    .replace(/\u00AE/g, "(R)")
+    // Strip everything else outside Latin-1/WinAnsi range to prevent crash
+    .replace(/[^\x00-\xFF]/g, "");
+}
+
 import type { HydratedPage, TextBlock, ImageBlock } from '@/types/hydration';
 
 // Drawing object type from canvas
@@ -508,7 +534,8 @@ async function drawTextBlock(
   const y = pageHeight - boxTop;
 
   // Strip HTML and get plain text
-  const plainText = stripHtml(block.html);
+  let plainText = stripHtml(block.html);
+  plainText = sanitizeForWinAnsi(plainText);
   if (!plainText.trim()) return;
 
   // Select font based on styles
@@ -737,7 +764,7 @@ export async function exportHydratedWithAnnotations(
   const pdfBytes = await pdfDoc.save();
   console.log('[PDF Export] Generated PDF bytes:', pdfBytes.length);
 
-  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
   console.log('[PDF Export] Created blob, size:', blob.size);
 
   // Ensure filename has .pdf extension

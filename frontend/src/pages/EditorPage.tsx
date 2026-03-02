@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/layout/TopBar";
 import { PDFViewer } from "@/components/document/PDFViewer";
 import { HydratedPageView } from "@/components/editor/HydratedPageView";
-import { TypstPageView } from "@/components/editor/TypstPageView";
+import { buildSectionToBlockMap } from "@/lib/semantic/semantic-merger";
 import { ProcessingOverlay } from "@/components/editor/ProcessingOverlay";
 import { CanvaToolbar } from "@/components/editor/CanvaToolbar";
 import { ColorPanel } from "@/components/editor/ColorPanel";
@@ -51,7 +51,6 @@ const EditorPage = () => {
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<DrawingTool>('select');
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
-  const [renderEngine, setRenderEngine] = useState<'classic' | 'typst'>('classic');
   const [zoomMode, setZoomMode] = useState<'fit-width' | 'original' | 'custom'>('fit-width');
   const [isLoading, setIsLoading] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -354,13 +353,38 @@ const EditorPage = () => {
 
   const semanticDocForHook = initialSemanticDoc || emptySemanticDoc;
 
+  // Build section→block mapping for AI edit sync
+  const sectionBlockMap = useMemo(() => {
+    if (!pages || !initialSemanticDoc) return new Map();
+    return buildSectionToBlockMap(pages, initialSemanticDoc.structure.sections);
+  }, [pages, initialSemanticDoc]);
+
+  // Callback: when AI edits a section, update the corresponding hydration block
+  const handleSectionUpdate = useCallback((sectionId: string, newContent: string) => {
+    const mapping = sectionBlockMap.get(sectionId);
+    if (mapping) {
+      const html = `<span>${newContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
+      updateBlock(mapping.pageIndex, mapping.blockId, html);
+    }
+  }, [sectionBlockMap, updateBlock]);
+
   const {
     typstSource: semanticTypstSource,
     sections: semanticSections,
     updateSection,
     addSection,
     deleteSection,
-  } = useSemanticDocument(semanticDocForHook);
+  } = useSemanticDocument(semanticDocForHook, handleSectionUpdate);
+
+  // Memoized document for AI sidebar — keeps section data in sync with edits
+  const typstDocument = useMemo(() => {
+    if (!initialSemanticDoc) return null;
+    return {
+      ...initialSemanticDoc,
+      typstSource: semanticTypstSource,
+      structure: { ...initialSemanticDoc.structure, sections: semanticSections },
+    };
+  }, [initialSemanticDoc, semanticTypstSource, semanticSections]);
 
   // Extract text from pages for AI (memoized) - must be after useHydrationEngine
   const documentText = useMemo(() => {
@@ -871,50 +895,37 @@ const EditorPage = () => {
         <div ref={pageContainerRef} className="flex flex-col items-center gap-4 w-full py-4 px-4 min-w-0">
           {pages.map(page => (
             <div key={page.pageIndex} data-page-canvas data-page-index={page.pageIndex}>
-              {renderEngine === 'typst' && initialSemanticDoc ? (
-                <TypstPageView
-                  document={{
-                    ...initialSemanticDoc,
-                    typstSource: semanticTypstSource,
-                    structure: { ...initialSemanticDoc.structure, sections: semanticSections }
-                  }}
-                  pageIndex={page.pageIndex}
-                  scale={zoom / 100}
-                  className="mb-8 shadow-lg"
-                />
-              ) : (
-                <HydratedPageView
-                  page={page}
-                  scale={zoom / 100}
-                  fitToContainer={zoomMode === 'fit-width'}
-                  containerWidth={Math.max(0, availableWidth - 32)} // Subtract px-4 (32px) from page container. contentRect already handles scroll container padding.
-                  drawingTool={activeTool}
-                  strokeColor={strokeColor}
-                  strokeWidth={strokeWidth}
-                  fillColor={fillColor}
-                  opacity={opacity}
-                  layers={layers}
-                  activeLayerId={activeLayerId}
-                  onUpdateBlock={(blockId, html) => updateBlock(page.pageIndex, blockId, html)}
-                  onMoveBlock={(blockId, newBox) => moveBlock(page.pageIndex, blockId, newBox)}
-                  onUpdateBlockStyles={(blockId, styles) => updateBlockStyles(page.pageIndex, blockId, styles)}
-                  onLayerObjectsChange={(layerId, objects) => handleLayerObjectsChange(layerId, page.pageIndex, objects)}
-                  onHistoryChange={handleHistoryChange}
-                  onSelectionChange={handleSelectionChange}
-                  onToolChange={handleToolChange}
-                  onTextEditingChange={(isEditing, blockId, styles) => handleTextEditingChange(page.pageIndex, isEditing, blockId, styles)}
-                  onAddTextBlock={(box, id) => addTextBlock(page.pageIndex, box, id)}
-                  onLayerCanvasReady={(layerId, ref) => handleLayerCanvasReady(page.pageIndex, layerId, ref)}
-                  onZoomChange={setZoom}
+              <HydratedPageView
+                page={page}
+                scale={zoom / 100}
+                fitToContainer={zoomMode === 'fit-width'}
+                containerWidth={Math.max(0, availableWidth - 32)} // Subtract px-4 (32px) from page container. contentRect already handles scroll container padding.
+                drawingTool={activeTool}
+                strokeColor={strokeColor}
+                strokeWidth={strokeWidth}
+                fillColor={fillColor}
+                opacity={opacity}
+                layers={layers}
+                activeLayerId={activeLayerId}
+                onUpdateBlock={(blockId, html) => updateBlock(page.pageIndex, blockId, html)}
+                onMoveBlock={(blockId, newBox) => moveBlock(page.pageIndex, blockId, newBox)}
+                onUpdateBlockStyles={(blockId, styles) => updateBlockStyles(page.pageIndex, blockId, styles)}
+                onLayerObjectsChange={(layerId, objects) => handleLayerObjectsChange(layerId, page.pageIndex, objects)}
+                onHistoryChange={handleHistoryChange}
+                onSelectionChange={handleSelectionChange}
+                onToolChange={handleToolChange}
+                onTextEditingChange={(isEditing, blockId, styles) => handleTextEditingChange(page.pageIndex, isEditing, blockId, styles)}
+                onAddTextBlock={(box, id) => addTextBlock(page.pageIndex, box, id)}
+                onLayerCanvasReady={(layerId, ref) => handleLayerCanvasReady(page.pageIndex, layerId, ref)}
+                onZoomChange={setZoom}
 
 
-                  deselectSignal={deselectSignal}
-                  signatureToInsert={signatureToInsert}
-                  onSignatureInserted={handleSignatureInserted}
-                  linkToApply={linkToApply}
-                  onLinkApplied={handleLinkApplied}
-                />
-              )}
+                deselectSignal={deselectSignal}
+                signatureToInsert={signatureToInsert}
+                onSignatureInserted={handleSignatureInserted}
+                linkToApply={linkToApply}
+                onLinkApplied={handleLinkApplied}
+              />
             </div>
           ))}
 
@@ -973,9 +984,6 @@ const EditorPage = () => {
         onMobileRightToggle={() => setMobileRightOpen(true)}
         leftSidebarOpen={leftSidebarOpen}
         rightSidebarOpen={rightSidebarOpen}
-        renderEngine={renderEngine}
-        onRenderEngineChange={setRenderEngine}
-        semanticAvailable={!!initialSemanticDoc}
       />
 
       {/* Body: Sidebars + Content */}
@@ -1126,11 +1134,7 @@ const EditorPage = () => {
               documentId={documentId || undefined}
               isIndexing={isIndexing}
               isIndexed={isIndexed}
-              semanticDoc={initialSemanticDoc ? {
-                ...initialSemanticDoc,
-                typstSource: semanticTypstSource,
-                structure: { ...initialSemanticDoc.structure, sections: semanticSections }
-              } : null}
+              semanticDoc={typstDocument}
               onUpdateSection={updateSection}
               onAddSection={addSection}
               onDeleteSection={deleteSection}
@@ -1231,11 +1235,7 @@ const EditorPage = () => {
           documentId={documentId || undefined}
           isIndexing={isIndexing}
           isIndexed={isIndexed}
-          semanticDoc={initialSemanticDoc ? {
-            ...initialSemanticDoc,
-            typstSource: semanticTypstSource,
-            structure: { ...initialSemanticDoc.structure, sections: semanticSections }
-          } : null}
+          semanticDoc={typstDocument}
           onUpdateSection={updateSection}
           onAddSection={addSection}
           onDeleteSection={deleteSection}

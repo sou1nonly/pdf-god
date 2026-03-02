@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
     SemanticDocument,
     SemanticSection,
@@ -18,8 +18,13 @@ function generateSectionId(type: SectionType): string {
 
 /**
  * Hook to manage a semantic document state with full CRUD + two-way sync.
+ * @param onSectionUpdate - Optional callback fired when a section is updated (e.g. by AI).
+ *                          Used to sync changes back to hydration blocks.
  */
-export function useSemanticDocument(initialDoc: SemanticDocument) {
+export function useSemanticDocument(
+    initialDoc: SemanticDocument,
+    onSectionUpdate?: (sectionId: string, newContent: string) => void
+) {
     const [typstSource, setTypstSource] = useState(initialDoc.typstSource);
     const [sections, setSections] = useState<SemanticSection[]>(initialDoc.structure.sections);
 
@@ -38,7 +43,11 @@ export function useSemanticDocument(initialDoc: SemanticDocument) {
 
     // ===================== Helpers =====================
 
-    const regenerateTypst = useCallback((nextSections: SemanticSection[]) => {
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingSectionsRef = useRef<SemanticSection[] | null>(null);
+
+    // Immediate (non-debounced) generation — used internally and for flush
+    const generateNow = useCallback((nextSections: SemanticSection[]) => {
         const result = generateTypstSource(
             nextSections,
             initialDoc.pageInfo,
@@ -46,7 +55,34 @@ export function useSemanticDocument(initialDoc: SemanticDocument) {
             DEFAULT_EXTRACTOR_CONFIG
         );
         setTypstSource(result.source);
+        pendingSectionsRef.current = null;
     }, [initialDoc.pageInfo, initialDoc.metadata]);
+
+    // Debounced regeneration — batches rapid CRUD ops (300ms)
+    const regenerateTypst = useCallback((nextSections: SemanticSection[]) => {
+        pendingSectionsRef.current = nextSections;
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            generateNow(nextSections);
+            debounceRef.current = null;
+        }, 300);
+    }, [generateNow]);
+
+    // Flush any pending debounced generation immediately
+    const flushTypst = useCallback(() => {
+        if (debounceRef.current && pendingSectionsRef.current) {
+            clearTimeout(debounceRef.current);
+            debounceRef.current = null;
+            generateNow(pendingSectionsRef.current);
+        }
+    }, [generateNow]);
+
+    // Cleanup debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
+    }, []);
 
     // ===================== UPDATE =====================
 
@@ -61,9 +97,17 @@ export function useSemanticDocument(initialDoc: SemanticDocument) {
 
             const next = updateInTree(prev);
             regenerateTypst(next);
+
+            // Sync back to hydration block
+            const updatedSection = next.find(s => s.id === sectionId)
+                || next.flatMap(s => s.children || []).find(c => c.id === sectionId);
+            if (updatedSection && onSectionUpdate) {
+                onSectionUpdate(sectionId, updatedSection.content);
+            }
+
             return next;
         });
-    }, [regenerateTypst]);
+    }, [regenerateTypst, onSectionUpdate]);
 
     // ===================== ADD =====================
 
@@ -152,6 +196,7 @@ export function useSemanticDocument(initialDoc: SemanticDocument) {
         addSection,
         deleteSection,
         moveSection,
+        flushTypst,
         setTypstSource,
     };
 }

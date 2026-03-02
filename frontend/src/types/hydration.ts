@@ -101,10 +101,12 @@ export type TextRunRaw = {
   height: number;
   fontSize: number;
   fontName: string;
+  fontFamily?: string; // actual family from PDF.js styles
   dir: string;
   rotation: number; // computed from transform
   transform: number[]; // raw transform matrix
   color?: string;
+  underline?: boolean; // detected from separator lines near baseline
 };
 
 export type TextLine = {

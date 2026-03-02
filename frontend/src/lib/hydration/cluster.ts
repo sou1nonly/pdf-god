@@ -29,7 +29,8 @@ interface TextLine {
   minX: number;
   maxX: number;
   height: number;
-  text: string;
+  text: string;       // Plain text (for search, matching)
+  html: string;       // Rich HTML with inline <span> for bold/italic/color
   fontSize: number;
   indent: number;     // Left indentation relative to page margin
 }
@@ -139,32 +140,45 @@ export function calculateGlobalStats(allPagesRuns: TextRunRaw[][]): GlobalStats 
 // 2. TEXT ITEM NORMALIZATION
 // =============================================================================
 
-export function normalizeTextItemsToRuns(items: any[], viewport: any): TextRunRaw[] {
+export function normalizeTextItemsToRuns(items: any[], viewport: any, styles?: Record<string, any>, textColors?: string[]): TextRunRaw[] {
   if (!items || items.length === 0) return [];
 
-  const rawRuns: TextRunRaw[] = items
-    .filter(item => item.str && item.str.trim().length > 0)
-    .map(item => {
-      const tx = item.transform;
-      const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]) ||
-        Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]) || 12;
-      const x = tx[4];
-      const y = viewport.height - tx[5];
+  // B2: Correlate operator-list colors with text items.
+  // textColors has one entry per text-showing op. PDF.js items are in render order.
+  // We map colors to items by index — if the array is shorter, fallback to black.
+  let colorIdx = 0;
 
-      return {
-        str: item.str,
-        x,
-        y,
-        width: item.width || (item.str.length * fontSize * 0.5),
-        height: fontSize * 1.2,
-        fontSize,
-        fontName: item.fontName || 'unknown',
-        dir: item.dir || 'ltr',
-        rotation: 0,
-        transform: tx,
-        color: '#000000'
-      };
+  const rawRuns: TextRunRaw[] = [];
+  for (const item of items) {
+    // Each item in textContent.items maps to a text-showing op
+    const color = (textColors && colorIdx < textColors.length)
+      ? textColors[colorIdx]
+      : '#000000';
+    colorIdx++;
+
+    if (!item.str || item.str.trim().length === 0) continue;
+
+    const tx = item.transform;
+    const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]) ||
+      Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]) || 12;
+    const x = tx[4];
+    const y = viewport.height - tx[5];
+
+    rawRuns.push({
+      str: item.str,
+      x,
+      y,
+      width: item.width || (item.str.length * fontSize * 0.5),
+      height: fontSize * 1.2,
+      fontSize,
+      fontName: item.fontName || 'unknown',
+      fontFamily: styles && styles[item.fontName] ? styles[item.fontName].fontFamily : undefined,
+      dir: item.dir || 'ltr',
+      rotation: 0,
+      transform: tx,
+      color
     });
+  }
 
   if (rawRuns.length === 0) {
     console.warn('No text runs extracted - PDF may be scanned/image-based');
@@ -221,9 +235,11 @@ function mergeAdjacentRuns(runs: TextRunRaw[]): TextRunRaw[] {
     const sameLine = Math.abs(current.y - run.y) < (current.fontSize * 0.5);
     const gap = run.x - (current.x + current.width);
     const isAdjacent = gap < (current.fontSize * 0.4) && gap > -(current.fontSize * 0.3);
-    const sameFont = Math.abs(current.fontSize - run.fontSize) < 1;
+    const sameFontSize = Math.abs(current.fontSize - run.fontSize) < 1;
+    // A1: Don't merge across font boundaries — preserves bold/italic transitions
+    const sameFontName = current.fontName === run.fontName;
 
-    if (sameLine && isAdjacent && sameFont) {
+    if (sameLine && isAdjacent && sameFontSize && sameFontName) {
       // Merge
       current.str += run.str;
       current.width = (run.x + run.width) - current.x;
@@ -278,6 +294,24 @@ function groupRunsIntoLines(runs: TextRunRaw[], stats: GlobalStats): TextLine[] 
   return lines;
 }
 
+// Helper: escape HTML special characters
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Helper: detect bold/italic from fontName
+function getFontStyle(fontName: string): { isBold: boolean; isItalic: boolean } {
+  const lower = fontName.toLowerCase();
+  return {
+    isBold: lower.includes('bold') || lower.includes('heavy') || lower.includes('black'),
+    isItalic: lower.includes('italic') || lower.includes('oblique'),
+  };
+}
+
 function createTextLine(runs: TextRunRaw[], stats: GlobalStats): TextLine {
   // Sort runs left-to-right
   runs.sort((a, b) => a.x - b.x);
@@ -298,23 +332,43 @@ function createTextLine(runs: TextRunRaw[], stats: GlobalStats): TextLine {
   const avgHeight = totalHeight / runs.length;
   const avgFontSize = totalFontSize / runs.length;
 
-  // Build text with proper spacing
+  // A2: Build both plain text AND rich HTML with per-run inline spans
   let text = '';
+  let html = '';
   for (let i = 0; i < runs.length; i++) {
+    // Add spacing between runs
     if (i > 0) {
       const gap = runs[i].x - (runs[i - 1].x + runs[i - 1].width);
       const spaceWidth = stats.averageCharWidth * 0.8;
 
       if (gap > spaceWidth * 3) {
-        // Large gap - tab-like spacing
         text += '\t';
+        html += '\t';
       } else if (gap > spaceWidth * 0.3) {
-        // Normal word space
         text += ' ';
+        html += ' ';
       }
-      // If gap is tiny or negative, no space needed (kerned text)
     }
-    text += runs[i].str;
+
+    const run = runs[i];
+    text += run.str;
+
+    // Build styled HTML span for this run
+    const { isBold, isItalic } = getFontStyle(run.fontName);
+    const hasColor = run.color && run.color !== '#000000';
+    const hasUnderline = run.underline === true;
+    const needsSpan = isBold || isItalic || hasColor || hasUnderline;
+
+    if (needsSpan) {
+      const styles: string[] = [];
+      if (isBold) styles.push('font-weight:700');
+      if (isItalic) styles.push('font-style:italic');
+      if (hasUnderline) styles.push('text-decoration:underline');
+      if (hasColor) styles.push(`color:${run.color}`);
+      html += `<span style="${styles.join(';')}">${escapeHtml(run.str)}</span>`;
+    } else {
+      html += escapeHtml(run.str);
+    }
   }
 
   return {
@@ -324,6 +378,7 @@ function createTextLine(runs: TextRunRaw[], stats: GlobalStats): TextLine {
     maxX,
     height: avgHeight,
     text: text.trim(),
+    html: html.trim(),
     fontSize: avgFontSize,
     indent: minX - stats.masterGrid.margins.left
   };
@@ -716,7 +771,7 @@ function paragraphToTextBlock(
   stats: GlobalStats,
   columnIndex: number
 ): TextBlock {
-  // Build clean text from lines
+  // A3: Build rich HTML from per-run styled line.html instead of plain line.text
   let html = '';
 
   para.lines.forEach((line, i) => {
@@ -724,7 +779,7 @@ function paragraphToTextBlock(
       // Add line break between lines in same paragraph
       html += '\n';
     }
-    html += line.text;
+    html += line.html;
   });
 
   // Calculate box as percentages - NO PADDING for accurate visual positions
@@ -733,11 +788,47 @@ function paragraphToTextBlock(
   const w = ((para.maxX - para.minX) / pageDims.width) * 100;
   const h = ((para.maxY - para.minY) / pageDims.height) * 100;
 
-  // Get font info from first run of first line
-  const firstRun = para.lines[0]?.runs[0];
-  const fontName = firstRun?.fontName || 'unknown';
-  const isBold = fontName.toLowerCase().includes('bold');
-  const isItalic = fontName.toLowerCase().includes('italic');
+  // Derive block-level bold/italic/underline from DOMINANT run style (not just first run)
+  let boldChars = 0;
+  let italicChars = 0;
+  let underlineChars = 0;
+  let totalChars = 0;
+  let dominantFontName = 'unknown';
+  let dominantFontFamily: string | undefined = undefined;
+  let maxRunChars = 0;
+  const colorCounts = new Map<string, number>();
+
+  for (const line of para.lines) {
+    for (const run of line.runs) {
+      const len = run.str.length;
+      totalChars += len;
+      const { isBold, isItalic } = getFontStyle(run.fontName);
+      if (isBold) boldChars += len;
+      if (isItalic) italicChars += len;
+      if (run.underline) underlineChars += len;
+      const c = run.color || '#000000';
+      colorCounts.set(c, (colorCounts.get(c) || 0) + len);
+      if (len > maxRunChars) {
+        maxRunChars = len;
+        dominantFontName = run.fontName;
+        dominantFontFamily = run.fontFamily;
+      }
+    }
+  }
+
+  const majorityBold = totalChars > 0 && boldChars > totalChars * 0.5;
+  const majorityItalic = totalChars > 0 && italicChars > totalChars * 0.5;
+  const majorityUnderline = totalChars > 0 && underlineChars > totalChars * 0.5;
+
+  // Find dominant color
+  let dominantColor = '#000000';
+  let maxColorCount = 0;
+  for (const [color, count] of colorCounts) {
+    if (count > maxColorCount) {
+      maxColorCount = count;
+      dominantColor = color;
+    }
+  }
 
   // Determine semantic role
   let role: 'h1' | 'h2' | 'body' | 'caption' = 'body';
@@ -757,13 +848,13 @@ function paragraphToTextBlock(
     ],
     styles: {
       fontSize: para.fontSize,
-      fontFamily: cleanFontName(fontName),
-      fontWeight: isBold || para.isHeader ? 700 : 400,
-      color: firstRun?.color || '#000000',
+      fontFamily: dominantFontFamily ? cleanFontName(dominantFontFamily) : cleanFontName(dominantFontName),
+      fontWeight: majorityBold || para.isHeader ? 700 : 400,
+      color: dominantColor,
       align: detectAlignment(para, stats),
       letterSpacing: 0,
-      italic: isItalic,
-      underline: false,
+      italic: majorityItalic,
+      underline: majorityUnderline,
       lineHeight: para.lines.length > 1 ? 1.5 : null
     },
     meta: {

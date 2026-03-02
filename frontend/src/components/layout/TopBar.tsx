@@ -173,26 +173,7 @@ export const TopBar = ({
             </div>
           )}
 
-          {semanticAvailable && (
-            <div className="flex items-center bg-muted/50 rounded-lg p-1 ml-4 hidden sm:flex">
-              <Button
-                variant={renderEngine === 'classic' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => onRenderEngineChange?.('classic')}
-                className="h-7 text-xs px-3"
-              >
-                Classic
-              </Button>
-              <Button
-                variant={renderEngine === 'typst' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => onRenderEngineChange?.('typst')}
-                className="h-7 text-xs px-3"
-              >
-                Semantic (Beta)
-              </Button>
-            </div>
-          )}
+
         </div>
 
         {/* RIGHT SECTION - Matches Right Sidebar Width (NO border - sidebar has its own) */}

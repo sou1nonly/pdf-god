@@ -1,10 +1,10 @@
 /// <reference lib="webworker" />
 
 import * as pdfjsLib from 'pdfjs-dist';
-import { 
-  normalizeTextItemsToRuns, 
-  analyzePageLayout, 
-  calculateGlobalStats 
+import {
+  normalizeTextItemsToRuns,
+  analyzePageLayout,
+  calculateGlobalStats
 } from '../lib/hydration/cluster';
 import { semanticAnalyzer } from '../lib/ai/semantic-analyzer';
 import { HydratedPage, ImageBlock } from '../types/hydration';
@@ -34,7 +34,7 @@ if (typeof document === 'undefined') {
       }
       return { style: {}, tagName: tagName.toUpperCase() };
     },
-    head: { appendChild: () => {} }
+    head: { appendChild: () => { } }
   };
 }
 if (typeof HTMLCanvasElement === 'undefined') (self as any).HTMLCanvasElement = OffscreenCanvas;
@@ -50,8 +50,8 @@ class OffscreenCanvasFactory {
     const canvas = new OffscreenCanvas(width, height);
     (canvas as any).style = { width: `${width}px`, height: `${height}px` };
     (canvas as any).tagName = 'CANVAS';
-    (canvas as any).addEventListener = () => {};
-    (canvas as any).removeEventListener = () => {};
+    (canvas as any).addEventListener = () => { };
+    (canvas as any).removeEventListener = () => { };
     const context = canvas.getContext("2d");
     return {
       canvas,
@@ -72,19 +72,76 @@ class OffscreenCanvasFactory {
   }
 }
 
+// --- TEXT COLOR EXTRACTION from Operator List ---
+// Walks the operator list tracking fill color state (rg/g/k + save/restore)
+// and stamps the current color onto each text-showing operation.
+// Returns an array of hex colors in the same order as textContent.items.
+async function extractTextColors(page: any): Promise<string[]> {
+  const colors: string[] = [];
+  try {
+    const opList = await page.getOperatorList();
+    const { OPS } = pdfjsLib;
+
+    // Graphics state stack for save/restore
+    let currentColor = '#000000';
+    const colorStack: string[] = [];
+
+    for (let i = 0; i < opList.fnArray.length; i++) {
+      const fn = opList.fnArray[i];
+      const args = opList.argsArray[i];
+
+      if (fn === OPS.save) {
+        colorStack.push(currentColor);
+      } else if (fn === OPS.restore) {
+        if (colorStack.length > 0) currentColor = colorStack.pop()!;
+      } else if (fn === OPS.setFillRGBColor) {
+        // rg operator: args = [r, g, b] in 0-1 range
+        const r = Math.round((args[0] ?? 0) * 255);
+        const g = Math.round((args[1] ?? 0) * 255);
+        const b = Math.round((args[2] ?? 0) * 255);
+        currentColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+      } else if (fn === OPS.setFillGray) {
+        // g operator: args = [gray] in 0-1 range
+        const v = Math.round((args[0] ?? 0) * 255);
+        currentColor = `#${v.toString(16).padStart(2, '0')}${v.toString(16).padStart(2, '0')}${v.toString(16).padStart(2, '0')}`;
+      } else if (fn === OPS.setFillCMYKColor) {
+        // k operator: args = [c, m, y, k] in 0-1 range → convert to RGB
+        const c = args[0] ?? 0, m = args[1] ?? 0, y = args[2] ?? 0, k = args[3] ?? 0;
+        const r = Math.round(255 * (1 - c) * (1 - k));
+        const g = Math.round(255 * (1 - m) * (1 - k));
+        const b = Math.round(255 * (1 - y) * (1 - k));
+        currentColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+      } else if (
+        fn === OPS.showText ||
+        fn === OPS.showSpacedText ||
+        fn === OPS.nextLineShowText ||
+        fn === OPS.nextLineSetSpacingShowText
+      ) {
+        // Text-showing operator: stamp current color
+        // PDF.js may produce multiple items per showText/showSpacedText op
+        // We push the color for each text-showing op; correlation with items is sequential
+        colors.push(currentColor);
+      }
+    }
+  } catch (e) {
+    console.warn('Text color extraction failed:', e);
+  }
+  return colors;
+}
+
 // Helper to extract Separators from OPS
 async function extractSeparators(page: any, viewport: any) {
   const separators: any[] = [];
   try {
     const opList = await page.getOperatorList();
     const { OPS } = pdfjsLib;
-    
+
     // Track State
     let currentX = 0, currentY = 0;
-    
+
     // We only care about strokes (lines/rects)
     // Simplified: Find explicit rectangle/line ops
-    
+
     for (let i = 0; i < opList.fnArray.length; i++) {
       const fn = opList.fnArray[i];
       const args = opList.argsArray[i];
@@ -96,79 +153,79 @@ async function extractSeparators(page: any, viewport: any) {
         let startX = 0, startY = 0;
 
         for (let j = 0; j < ops.length; j++) {
-           const op = ops[j];
-           if (op === OPS.moveTo) {
-              startX = vals[valIdx++];
-              startY = vals[valIdx++];
-           } else if (op === OPS.lineTo) {
-              const endX = vals[valIdx++];
-              const endY = vals[valIdx++];
-              
-              // Is it horizontal or vertical?
-              const isH = Math.abs(startY - endY) < 2;
-              const isV = Math.abs(startX - endX) < 2;
-              
-              if (isH || isV) {
-                // Convert to Viewport Coords
-                // Note: We need the CTM (Current Transform Matrix) strictly speaking,
-                // but usually constructPath args are in user space.
-                
-                // transform to viewport
-                const p1 = viewport.convertToViewportPoint(startX, startY);
-                const p2 = viewport.convertToViewportPoint(endX, endY);
-                
-                // Box
-                const x = Math.min(p1[0], p2[0]);
-                const y = Math.min(p1[1], p2[1]);
-                const w = Math.abs(p1[0] - p2[0]) + 1; // min width 1
-                const h = Math.abs(p1[1] - p2[1]) + 1;
+          const op = ops[j];
+          if (op === OPS.moveTo) {
+            startX = vals[valIdx++];
+            startY = vals[valIdx++];
+          } else if (op === OPS.lineTo) {
+            const endX = vals[valIdx++];
+            const endY = vals[valIdx++];
 
-                // Filter tiny noise
-                if (isH && w > 50) {
-                   separators.push({ type: 'line', box: [x, y, w, h], orientation: 'horizontal' });
-                } else if (isV && h > 50) {
-                   separators.push({ type: 'line', box: [x, y, w, h], orientation: 'vertical' });
-                }
+            // Is it horizontal or vertical?
+            const isH = Math.abs(startY - endY) < 2;
+            const isV = Math.abs(startX - endX) < 2;
+
+            if (isH || isV) {
+              // Convert to Viewport Coords
+              // Note: We need the CTM (Current Transform Matrix) strictly speaking,
+              // but usually constructPath args are in user space.
+
+              // transform to viewport
+              const p1 = viewport.convertToViewportPoint(startX, startY);
+              const p2 = viewport.convertToViewportPoint(endX, endY);
+
+              // Box
+              const x = Math.min(p1[0], p2[0]);
+              const y = Math.min(p1[1], p2[1]);
+              const w = Math.abs(p1[0] - p2[0]) + 1; // min width 1
+              const h = Math.abs(p1[1] - p2[1]) + 1;
+
+              // Filter tiny noise
+              if (isH && w > 50) {
+                separators.push({ type: 'line', box: [x, y, w, h], orientation: 'horizontal' });
+              } else if (isV && h > 50) {
+                separators.push({ type: 'line', box: [x, y, w, h], orientation: 'vertical' });
               }
-              startX = endX; startY = endY;
-           }
+            }
+            startX = endX; startY = endY;
+          }
         }
       } else if (fn === OPS.rectangle) {
-         const [x, y, w, h] = args;
-         // Convert
-         const p = viewport.convertToViewportRectangle([x, y, x+w, y+h]);
-         const box = [p[0], p[1], p[2]-p[0], p[3]-p[1]]; // [x, y, w, h]
-         
-         // Only treat as separator if thin (line)
-         if (box[2] < 5 && box[3] > 50) {
-             separators.push({ type: 'line', box, orientation: 'vertical' });
-         } else if (box[3] < 5 && box[2] > 50) {
-             separators.push({ type: 'line', box, orientation: 'horizontal' });
-         }
+        const [x, y, w, h] = args;
+        // Convert
+        const p = viewport.convertToViewportRectangle([x, y, x + w, y + h]);
+        const box = [p[0], p[1], p[2] - p[0], p[3] - p[1]]; // [x, y, w, h]
+
+        // Only treat as separator if thin (line)
+        if (box[2] < 5 && box[3] > 50) {
+          separators.push({ type: 'line', box, orientation: 'vertical' });
+        } else if (box[3] < 5 && box[2] > 50) {
+          separators.push({ type: 'line', box, orientation: 'horizontal' });
+        }
       }
     }
-  } catch(e) { console.warn('Vector extraction failed', e); }
+  } catch (e) { console.warn('Vector extraction failed', e); }
   return separators;
 }
 
 // Helper to extract images from PDF page by rendering to canvas
 async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
   const images: ImageBlock[] = [];
-  
+
   try {
     const opList = await page.getOperatorList();
     const { OPS } = pdfjsLib;
-    
+
     // Track transforms and image positions
     let transformStack: number[][] = [[viewport.transform[0], viewport.transform[1], viewport.transform[2], viewport.transform[3], viewport.transform[4], viewport.transform[5]]];
     let imageIndex = 0;
     const imagePositions: { name: string; transform: number[] }[] = [];
-    
+
     // First pass: collect all image operations with their transforms
     for (let i = 0; i < opList.fnArray.length; i++) {
       const fn = opList.fnArray[i];
       const args = opList.argsArray[i];
-      
+
       if (fn === OPS.save) {
         transformStack.push([...transformStack[transformStack.length - 1]]);
       } else if (fn === OPS.restore) {
@@ -185,21 +242,21 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
         });
       }
     }
-    
+
     console.log(`  🔍 Found ${imagePositions.length} image operations`);
-    
+
     // Second pass: Extract each image
     for (const imgPos of imagePositions) {
       try {
         let imgObj: any = null;
-        
+
         // Try to get from page objects
         if (imgPos.name.startsWith('inline-')) {
           // Inline images are harder - skip for now
           console.log(`  ⚠️ Skipping inline image: ${imgPos.name}`);
           continue;
         }
-        
+
         // Get image object - it might be a promise
         try {
           imgObj = await new Promise((resolve, reject) => {
@@ -212,25 +269,25 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
           // Try alternative method
           imgObj = page.objs._objs?.get(imgPos.name)?.data;
         }
-        
+
         if (!imgObj) {
           console.log(`  ⚠️ Could not get image object: ${imgPos.name}`);
           continue;
         }
-        
+
         const imgWidth = imgObj.width || 100;
         const imgHeight = imgObj.height || 100;
-        
+
         console.log(`  📷 Processing image: ${imgPos.name} (${imgWidth}x${imgHeight})`);
-        
+
         // Create canvas and render image
         const canvas = new OffscreenCanvas(imgWidth, imgHeight);
         const ctx = canvas.getContext('2d');
-        
+
         if (!ctx) continue;
-        
+
         let blob: Blob | null = null;
-        
+
         // Check if it's already a bitmap or has bitmap property
         if (imgObj.bitmap) {
           ctx.drawImage(imgObj.bitmap, 0, 0);
@@ -240,7 +297,7 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
           const imageData = ctx.createImageData(imgWidth, imgHeight);
           const dataLen = imgObj.data.length;
           const pixelCount = imgWidth * imgHeight;
-          
+
           if (dataLen === pixelCount * 4) {
             // RGBA
             imageData.data.set(imgObj.data);
@@ -265,7 +322,7 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
             console.log(`  ⚠️ Unknown data format: ${dataLen} bytes for ${pixelCount} pixels`);
             continue;
           }
-          
+
           ctx.putImageData(imageData, 0, 0);
           blob = await canvas.convertToBlob({ type: 'image/png' });
         } else if (imgObj instanceof ImageBitmap) {
@@ -275,33 +332,33 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
           console.log(`  ⚠️ Unknown image format for: ${imgPos.name}`, Object.keys(imgObj));
           continue;
         }
-        
+
         if (!blob || blob.size === 0) {
           console.log(`  ⚠️ Failed to create blob for: ${imgPos.name}`);
           continue;
         }
-        
+
         // Calculate position from transform
         // Transform is [scaleX, skewY, skewX, scaleY, translateX, translateY]
         const [a, b, c, d, e, f] = imgPos.transform;
-        
+
         // The transform scales the 1x1 unit square to the image dimensions
         // Position is at (e, f) in PDF coordinates
         const pdfX = e;
         const pdfY = f;
         const pdfWidth = Math.abs(a) || imgWidth;
         const pdfHeight = Math.abs(d) || imgHeight;
-        
+
         // Convert to viewport coordinates
         const vpX = pdfX;
         const vpY = viewport.height - pdfY - pdfHeight; // Flip Y
-        
+
         // Convert to percentages
         const xPercent = (vpX / viewport.width) * 100;
         const yPercent = (vpY / viewport.height) * 100;
         const wPercent = (pdfWidth / viewport.width) * 100;
         const hPercent = (pdfHeight / viewport.height) * 100;
-        
+
         images.push({
           id: `img-${Date.now()}-${imageIndex}`,
           type: 'image',
@@ -315,10 +372,10 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
           mimeType: 'image/png',
           rotation: 0
         });
-        
+
         console.log(`  ✅ Image ${imageIndex + 1}: ${imgPos.name} at [${xPercent.toFixed(1)}%, ${yPercent.toFixed(1)}%] size [${wPercent.toFixed(1)}%x${hPercent.toFixed(1)}%]`);
         imageIndex++;
-        
+
       } catch (imgErr) {
         console.warn(`  ⚠️ Error processing image ${imgPos.name}:`, imgErr);
       }
@@ -326,7 +383,7 @@ async function extractImages(page: any, viewport: any): Promise<ImageBlock[]> {
   } catch (e) {
     console.warn('Image extraction failed:', e);
   }
-  
+
   console.log(`  → ${images.length} images successfully extracted`);
   return images;
 }
@@ -362,39 +419,39 @@ self.onmessage = async (event: MessageEvent) => {
   try {
     // Stage 1: Opening PDF
     self.postMessage({ type: 'STAGE', stage: 'opening', message: 'Opening PDF document...' });
-    
+
     const data = new Uint8Array(fileBuffer);
-    const loadingTask = pdfjsLib.getDocument({ 
+    const loadingTask = pdfjsLib.getDocument({
       data,
       cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.394/cmaps/',
       cMapPacked: true,
       disableAutoFetch: true,
       disableStream: true,
     });
-    
+
     const pdf = await loadingTask.promise;
     const pages: HydratedPage[] = [];
 
     // Stage 2: Global Analysis
     self.postMessage({ type: 'STAGE', stage: 'scanning', message: `Scanning ${pdf.numPages} pages for structure...` });
     self.postMessage({ type: 'PROGRESS', progress: 5 });
-    
+
     const allPageRuns = [];
     const sampleLimit = Math.min(pdf.numPages, 10);
-    
+
     for (let i = 1; i <= sampleLimit; i++) {
-       const page = await pdf.getPage(i);
-       const viewport = page.getViewport({ scale: 1.0 });
-       const textContent = await page.getTextContent();
-       const runs = normalizeTextItemsToRuns(textContent.items, viewport);
-       allPageRuns.push(runs);
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1.0 });
+      const textContent = await page.getTextContent();
+      const runs = normalizeTextItemsToRuns(textContent.items, viewport, textContent.styles);
+      allPageRuns.push(runs);
     }
     const globalStats = calculateGlobalStats(allPageRuns);
-    
+
     // Stage 3: AI Initialization
     self.postMessage({ type: 'STAGE', stage: 'ai-init', message: 'Loading AI models...' });
     self.postMessage({ type: 'PROGRESS', progress: 15 });
-    
+
     try {
       await semanticAnalyzer.init();
       aiAvailable = true;
@@ -412,34 +469,55 @@ self.onmessage = async (event: MessageEvent) => {
     // --- PASS 2: HYDRATION ---
     for (let i = 1; i <= pdf.numPages; i++) {
       // Per-page progress message
-      self.postMessage({ 
-        type: 'STAGE', 
-        stage: 'extracting-page', 
+      self.postMessage({
+        type: 'STAGE',
+        stage: 'extracting-page',
         message: `Extracting page ${i} of ${pdf.numPages}...`,
         pageNum: i,
         totalPages: pdf.numPages
       });
-      
+
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale: 1.0 });
       const textContent = await page.getTextContent();
-      
-      // Extract text runs
-      const runs = normalizeTextItemsToRuns(textContent.items, viewport);
-      
+
+      // Extract text colors from operator list (Phase B)
+      const textColors = await extractTextColors(page);
+
+      // Extract text runs (pass colors + styles for accurate per-run data)
+      const runs = normalizeTextItemsToRuns(textContent.items, viewport, textContent.styles, textColors);
+
       // Extract Vectors (Separators/Lines)
       const separators = await extractSeparators(page, viewport);
-      
+
       // Extract Images
       const images = await extractImages(page, viewport);
+
+      // Phase C: Detect underlines — correlate thin horizontal separators with run baselines
+      const hSeps = separators.filter((s: any) => s.orientation === 'horizontal');
+      for (const run of runs) {
+        const baseline = run.y + run.height; // bottom of text in viewport coords
+        for (const sep of hSeps) {
+          const sepY = sep.box[1];
+          const sepX = sep.box[0];
+          const sepRight = sepX + sep.box[2];
+          // Separator near baseline (within ~3px) and horizontally covers the run
+          if (Math.abs(sepY - baseline) < 3 &&
+            sepX <= run.x + 2 &&
+            sepRight >= run.x + run.width - 2) {
+            run.underline = true;
+            break;
+          }
+        }
+      }
 
       // Analyze Layout with smart algorithm
       self.postMessage({ type: 'STAGE', stage: 'analyzing', message: `Analyzing layout for page ${i}...` });
       const textBlocks = analyzePageLayout(runs, separators, { width: viewport.width, height: viewport.height }, globalStats);
-      
+
       // Add images to blocks
       let blocks: (typeof textBlocks[number] | ImageBlock)[] = [...textBlocks, ...images];
-      
+
       // Log detailed extraction stats
       logExtractionStats(i, {
         textItems: textContent.items.length,
@@ -450,7 +528,7 @@ self.onmessage = async (event: MessageEvent) => {
         images: images.length,
         separators: separators.length
       });
-      
+
       // Log individual blocks for debugging
       console.log(`\n📦 Blocks on Page ${i}:`);
       blocks.forEach((b, idx) => {
@@ -469,13 +547,13 @@ self.onmessage = async (event: MessageEvent) => {
         try {
           const aiPromises = blocks.map(async (b) => {
             if (b.type === 'text' && b.html.length < 50) {
-               const score = await semanticAnalyzer.getSimilarity(b.html, "Figure 1 description");
-               if (score > 0.4) {
-                  b.meta.isCaption = true;
-                  b.styles.color = '#555555';
-                  b.styles.fontSize = Math.min(b.styles.fontSize, 10);
-                  b.styles.italic = true;
-               }
+              const score = await semanticAnalyzer.getSimilarity(b.html, "Figure 1 description");
+              if (score > 0.4) {
+                b.meta.isCaption = true;
+                b.styles.color = '#555555';
+                b.styles.fontSize = Math.min(b.styles.fontSize, 10);
+                b.styles.italic = true;
+              }
             }
             return b;
           });
@@ -493,16 +571,16 @@ self.onmessage = async (event: MessageEvent) => {
         dims: { width: viewport.width, height: viewport.height },
         backgroundBlob: null,
         blocks: blocks,
-        meta: { 
-          lineHeightEstimate: globalStats.dominantLineHeight, 
+        meta: {
+          lineHeightEstimate: globalStats.dominantLineHeight,
           avgFontSize: globalStats.dominantFontSize,
           grid: {
-             columns: globalStats.masterGrid.columns,
-             margins: globalStats.masterGrid.margins
+            columns: globalStats.masterGrid.columns,
+            margins: globalStats.masterGrid.margins
           }
         }
       });
-      
+
       // Progress: 20% for setup + 80% distributed across pages
       const pageProgress = 20 + Math.round((i / pdf.numPages) * 75);
       self.postMessage({ type: 'PROGRESS', progress: pageProgress });
@@ -513,7 +591,7 @@ self.onmessage = async (event: MessageEvent) => {
     self.postMessage({ type: 'PROGRESS', progress: 100 });
 
     self.postMessage({ type: 'COMPLETE', pages });
-    
+
   } catch (error) {
     self.postMessage({ type: 'ERROR', error: (error as Error).message });
   }
