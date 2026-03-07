@@ -19,6 +19,8 @@ import { NewDocumentForm } from "@/components/editor/NewDocumentForm";
 import { LayersPanel } from "@/components/editor/canvas/LayersPanel";
 import { Layer } from "@/components/editor/types";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
+import { MobileEditorLayout } from "@/components/layout/MobileEditorLayout";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useHydrationEngine } from "@/hooks/engine/useHydrationEngine";
 import { useSemanticDocument } from "@/hooks/useSemanticDocument";
 import type { SemanticDocument } from "@/lib/semantic/types";
@@ -35,6 +37,7 @@ const EditorPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const documentId = searchParams.get("id");
+  const isMobile = useIsMobile();
 
   // Refs for capturing page canvases for export
   const pageContainerRef = useRef<HTMLDivElement>(null);
@@ -965,6 +968,32 @@ const EditorPage = () => {
     );
   };
 
+  // ──── Mobile Layout ────
+  if (isMobile) {
+    return (
+      <MobileEditorLayout
+        fileName={fileName}
+        documentId={documentId || undefined}
+        documentText={documentText}
+        isIndexing={isIndexing}
+        isIndexed={isIndexed}
+        pdfUrl={pdfUrl}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+        onSave={handleSave}
+        onDownload={handleDownload}
+        hasUnsavedChanges={hasUnsavedChanges}
+        isSaving={isSaving}
+        semanticDoc={typstDocument}
+        onUpdateSection={updateSection}
+        onAddSection={addSection}
+        onDeleteSection={deleteSection}
+      />
+    );
+  }
+
+  // ──── Desktop Layout ────
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       {/* Full-width TopBar */}

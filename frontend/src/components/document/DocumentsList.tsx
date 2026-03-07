@@ -315,7 +315,7 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
       </div>
 
       {/* Documents Grid/List */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-6">
         {filteredDocuments.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center space-y-4">
@@ -340,29 +340,29 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
           <div
             className={
               viewMode === 'grid'
-                ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+                ? 'grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4'
                 : 'space-y-2'
             }
           >
             {filteredDocuments.map((doc) => (
               <Card
                 key={doc.id}
-                className="p-4 group cursor-pointer
+                className="p-2.5 sm:p-4 group cursor-pointer
                   bg-white/95 backdrop-blur-sm
                   border-2 border-border hover:border-primary/50
-                  rounded-2xl shadow-layer-sm
+                  rounded-xl sm:rounded-2xl shadow-layer-sm
                   transition-all duration-300 ease-out
                   hover:shadow-layer-lg hover:-translate-y-1"
               >
                 {viewMode === 'grid' ? (
-                  <div className="space-y-3">
-                    <div className="aspect-[3/4] bg-gray-100 rounded-xl flex items-center justify-center relative overflow-hidden border border-border/50">
+                  <div className="space-y-2 sm:space-y-3">
+                    <div className="aspect-[4/5] sm:aspect-[3/4] bg-gray-100 rounded-lg sm:rounded-xl flex items-center justify-center relative overflow-hidden border border-border/50">
                       <DocumentThumbnail storagePath={doc.storage_path} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none" />
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-semibold truncate flex-1 text-sm group-hover:text-primary transition-colors" title={doc.file_name}>
+                        <h3 className="font-semibold truncate flex-1 text-xs sm:text-sm group-hover:text-primary transition-colors" title={doc.file_name}>
                           {doc.file_name}
                         </h3>
                         <DropdownMenu>
@@ -390,9 +390,9 @@ export const DocumentsList = ({ embedded = false, onUploadClick }: DocumentsList
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                      <div className="flex items-center justify-between text-[10px] sm:text-xs text-muted-foreground font-medium">
                         <span>{formatFileSize(doc.file_size)}</span>
-                        <span>{formatDate(doc.created_at)}</span>
+                        <span className="hidden sm:inline">{formatDate(doc.created_at)}</span>
                       </div>
                       <Button
                         size="sm"

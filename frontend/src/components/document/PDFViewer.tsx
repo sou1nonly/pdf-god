@@ -106,7 +106,7 @@ const PDFPage = ({ pageNumber, pdfDocument, scale, rotation, onInView, fitToWidt
           textLayerRef.current.style.height = `${viewport.height}px`;
           textLayerRef.current.style.width = `${viewport.width}px`;
 
-          const textContent = await page.getTextContent();
+          const textContent = await page.getTextContent({ includeMarkedContent: true });
           const textLayer = new pdfjsLib.TextLayer({
             textContentSource: textContent,
             container: textLayerRef.current,

@@ -442,7 +442,7 @@ self.onmessage = async (event: MessageEvent) => {
     for (let i = 1; i <= sampleLimit; i++) {
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale: 1.0 });
-      const textContent = await page.getTextContent();
+      const textContent = await page.getTextContent({ includeMarkedContent: true });
       const runs = normalizeTextItemsToRuns(textContent.items, viewport, textContent.styles);
       allPageRuns.push(runs);
     }
@@ -479,7 +479,7 @@ self.onmessage = async (event: MessageEvent) => {
 
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale: 1.0 });
-      const textContent = await page.getTextContent();
+      const textContent = await page.getTextContent({ includeMarkedContent: true });
 
       // Extract text colors from operator list (Phase B)
       const textColors = await extractTextColors(page);
